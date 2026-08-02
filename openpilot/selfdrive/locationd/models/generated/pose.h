@@ -1,0 +1,22 @@
+#pragma once
+#include "rednose/helpers/ekf.h"
+extern "C" {
+void pose_update_4(double *in_x, double *in_P, double *in_z, double *in_R, double *in_ea);
+void pose_update_10(double *in_x, double *in_P, double *in_z, double *in_R, double *in_ea);
+void pose_update_13(double *in_x, double *in_P, double *in_z, double *in_R, double *in_ea);
+void pose_update_14(double *in_x, double *in_P, double *in_z, double *in_R, double *in_ea);
+void pose_err_fun(double *nom_x, double *delta_x, double *out_2294198930716030722);
+void pose_inv_err_fun(double *nom_x, double *true_x, double *out_4974602922426709952);
+void pose_H_mod_fun(double *state, double *out_4759570850015884975);
+void pose_f_fun(double *state, double dt, double *out_1340898844102295762);
+void pose_F_fun(double *state, double dt, double *out_6444369143388310098);
+void pose_h_4(double *state, double *unused, double *out_7403012963842053373);
+void pose_H_4(double *state, double *unused, double *out_1088510956736073746);
+void pose_h_10(double *state, double *unused, double *out_6693233631074133649);
+void pose_H_10(double *state, double *unused, double *out_4342710343640918055);
+void pose_h_13(double *state, double *unused, double *out_5560317675039026719);
+void pose_H_13(double *state, double *unused, double *out_2123762868596259055);
+void pose_h_14(double *state, double *unused, double *out_4024393874269291964);
+void pose_H_14(double *state, double *unused, double *out_2874729899603410783);
+void pose_predict(double *in_x, double *in_P, double *in_Q, double dt);
+}
