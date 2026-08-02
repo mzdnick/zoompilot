@@ -66,6 +66,23 @@ if HARDWARE.get_device_type() == "tizi":
     AudibleAlert.disengage: ("disengage_tizi.wav", 1, MAX_VOLUME),
   })
 
+# Pre-PR #38154 alert sounds. Used when the UseLegacySounds param is on.
+# complete is not included: it was added by PR #38154 and had no legacy form.
+sound_list_legacy: dict[int, tuple[str, int | None, float]] = {
+  AudibleAlert.engage: ("engage_legacy.wav", 1, MAX_VOLUME),
+  AudibleAlert.disengage: ("disengage_legacy.wav", 1, MAX_VOLUME),
+  AudibleAlert.refuse: ("refuse_legacy.wav", 1, MAX_VOLUME),
+
+  AudibleAlert.prompt: ("prompt.wav", 1, MAX_VOLUME),
+  AudibleAlert.promptRepeat: ("prompt.wav", None, MAX_VOLUME),
+  AudibleAlert.promptDistracted: ("prompt_distracted.wav", None, MAX_VOLUME),
+
+  AudibleAlert.preAlert: ("pre_alert_legacy.wav", 1, MAX_VOLUME),
+
+  AudibleAlert.warningSoft: ("warning_soft.wav", None, MAX_VOLUME),
+  AudibleAlert.warningImmediate: ("warning_immediate.wav", None, MAX_VOLUME),
+}
+
 def check_selfdrive_timeout_alert(sm):
   ss_missing = time.monotonic() - sm.recv_time['selfdriveState']
 
@@ -79,6 +96,9 @@ def check_selfdrive_timeout_alert(sm):
 class Soundd(QuietMode):
   def __init__(self):
     super().__init__()
+
+    self.use_legacy_sounds: bool = self.params.get_bool("UseLegacySounds")
+    self.sound_list = self._active_sound_list()
 
     self.load_sounds()
 
@@ -94,12 +114,32 @@ class Soundd(QuietMode):
 
     self.spl_filter_weighted = FirstOrderFilter(0, 2.5, FILTER_DT, initialized=False)
 
+  def load_param(self) -> None:
+    super().load_param()
+    use_legacy_sounds = self.params.get_bool("UseLegacySounds")
+    if use_legacy_sounds != self.use_legacy_sounds:
+      self.use_legacy_sounds = use_legacy_sounds
+      self.sound_list = self._active_sound_list()
+      self.load_sounds()
+
+  def _active_sound_list(self) -> dict[int, tuple[str, int | None, float]]:
+    active_sound_list = sound_list
+    if self.use_legacy_sounds:
+      active_sound_list = {**sound_list, **sound_list_legacy}
+    if HARDWARE.get_device_type() == "tizi":
+      active_sound_list = {
+        **active_sound_list,
+        AudibleAlert.engage: ("engage_tizi.wav", 1, MAX_VOLUME),
+        AudibleAlert.disengage: ("disengage_tizi.wav", 1, MAX_VOLUME),
+      }
+    return active_sound_list
+
   def load_sounds(self):
     self.loaded_sounds: dict[int, np.ndarray] = {}
 
     # Load all sounds
-    for sound in sound_list:
-      filename, play_count, volume = sound_list[sound]
+    for sound in self.sound_list:
+      filename, play_count, volume = self.sound_list[sound]
 
       with wave.open(BASEDIR + "/openpilot/selfdrive/assets/sounds/" + filename, 'r') as wavefile:
         assert wavefile.getnchannels() == 1
@@ -114,7 +154,7 @@ class Soundd(QuietMode):
     ret = np.zeros(frames, dtype=np.float32)
 
     if self.should_play_sound(self.current_alert):
-      num_loops = sound_list[self.current_alert][1]
+      num_loops = self.sound_list[self.current_alert][1]
       sound_data = self.loaded_sounds[self.current_alert]
       written_frames = 0
 
@@ -144,7 +184,7 @@ class Soundd(QuietMode):
   def update_alert(self, new_alert):
     current_alert_played_once = self.current_alert == AudibleAlert.none or self.current_sound_frame >= len(self.loaded_sounds[self.current_alert])
     # let looping sounds finish the current loop instead of cutting off mid tone
-    if new_alert == AudibleAlert.none and self.current_alert != AudibleAlert.none and sound_list[self.current_alert][1] is None:
+    if new_alert == AudibleAlert.none and self.current_alert != AudibleAlert.none and self.sound_list[self.current_alert][1] is None:
       if current_alert_played_once:
         self.pending_stop = True
       else:

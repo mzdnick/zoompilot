@@ -12,3 +12,13 @@
 
 openpilot/selfdrive/car/tests/test_models_segs.txt filter=lfs diff=lfs merge=lfs -text
 openpilot/common/hardware/tici/updater filter=lfs diff=lfs merge=lfs -text
+
+# Legacy sound files: store as plain blobs, not LFS.
+openpilot/selfdrive/assets/sounds/prompt.wav !filter !merge !diff
+openpilot/selfdrive/assets/sounds/prompt_distracted.wav !filter !merge !diff
+openpilot/selfdrive/assets/sounds/warning_immediate.wav !filter !merge !diff
+openpilot/selfdrive/assets/sounds/warning_soft.wav !filter !merge !diff
+openpilot/selfdrive/assets/sounds/engage_legacy.wav !filter !merge !diff
+openpilot/selfdrive/assets/sounds/disengage_legacy.wav !filter !merge !diff
+openpilot/selfdrive/assets/sounds/pre_alert_legacy.wav !filter !merge !diff
+openpilot/selfdrive/assets/sounds/refuse_legacy.wav !filter !merge !diff

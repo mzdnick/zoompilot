@@ -87,6 +87,15 @@ class DeviceLayoutSP(DeviceLayout):
     )
     self._quiet_mode_and_dcam.action_item.right_button.set_button_style(ButtonStyle.NORMAL)
 
+    # Using dual button with no right button for better alignment
+    self._legacy_sounds_btn = dual_button_item_sp(
+      left_text=lambda: tr("Legacy Sounds"),
+      left_callback=lambda: ui_state.params.put_bool("UseLegacySounds", not ui_state.params.get_bool("UseLegacySounds")),
+      right_text="",
+      right_callback=None,
+    )
+    self._legacy_sounds_btn.action_item.right_button.set_visible(False)
+
     self._reg_and_training = dual_button_item_sp(
       left_text=lambda: tr("Regulatory"),
       left_callback=self._on_regulatory,
@@ -125,6 +134,7 @@ class DeviceLayoutSP(DeviceLayout):
       self._max_time_offroad,
       LineSeparator(height=10),
       self._quiet_mode_and_dcam,
+      self._legacy_sounds_btn,
       self._reg_and_training,
       self._onroad_uploads_and_reset_settings,
       Spacer(10),
@@ -209,6 +219,11 @@ class DeviceLayoutSP(DeviceLayout):
 
     # Quiet Mode button
     self._quiet_mode_and_dcam.action_item.left_button.set_button_style(ButtonStyle.PRIMARY if ui_state.params.get_bool("QuietMode") else ButtonStyle.NORMAL)
+
+    # Legacy Sounds button
+    self._legacy_sounds_btn.action_item.left_button.set_button_style(
+      ButtonStyle.PRIMARY if ui_state.params.get_bool("UseLegacySounds") else ButtonStyle.NORMAL
+    )
 
     # Onroad Uploads
     self._onroad_uploads_and_reset_settings.action_item.left_button.set_button_style(
