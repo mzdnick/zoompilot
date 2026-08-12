@@ -75,6 +75,17 @@ if HARDWARE.get_device_type() == "tizi":
     AudibleAlert.disengage: ("disengage_tizi.wav", 1, MAX_VOLUME),
   })
 
+# Fork (zoompilot): louder re-authored safety warnings. The stock tones
+# (critical.wav, dm_critical.wav) are sines near 0 dBFS, so runtime gain can
+# only add ~2 dB before clipping. These fork tones use a square-ish waveform at
+# a higher, speaker-efficient frequency, so they cut through cabin music on every
+# device (tici, tizi, mici). Upstream WAVs are not modified. Tune frequencies via
+# make_warnings_sp.py (play sweep_sp.wav to find the device's loudest band).
+sound_list.update({
+  AudibleAlert.warningSoft: ("critical_sp.wav", None, MAX_VOLUME),
+  AudibleAlert.warningImmediate: ("dm_critical_sp.wav", None, MAX_VOLUME),
+})
+
 def check_selfdrive_timeout_alert(sm):
   ss_missing = time.monotonic() - sm.recv_time['selfdriveState']
 
