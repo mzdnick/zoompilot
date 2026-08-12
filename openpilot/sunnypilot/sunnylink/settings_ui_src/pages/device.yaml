@@ -27,6 +27,13 @@ sections:
   - key: QuietMode
     widget: toggle
     title: Quiet Mode
+  - key: AlertVolumeBoost
+    widget: option
+    title: Alert Volume Boost
+    min: 0
+    max: 100
+    step: 20
+    unit: "%"
   - key: OnroadUploads
     widget: toggle
     title: Onroad Uploads

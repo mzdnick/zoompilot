@@ -35,6 +35,15 @@ if HARDWARE.get_device_type() == "tizi":
 AudibleAlert = log.SelfdriveState.AudibleAlert
 AudibleAlertSP = custom.SelfdriveStateSP.AudibleAlert
 
+# AlertVolumeBoost: 0-100 user gain in dB. Lifts current_volume toward full
+# scale (quiet cabins) and adds a fixed boost (loud cabins). 0 = stock.
+ALERT_VOLUME_BOOST_MAX = 100
+ALERT_VOLUME_BOOST_DB = 6.0  # max additive boost at 100%
+
+# Urgent safety alerts: always stock, never altered by Volume Boost.
+# Both ship at ~0 dBFS, so boost could only distort them.
+BOOST_EXCLUDED_ALERTS = frozenset({AudibleAlert.warningSoft, AudibleAlert.warningImmediate})
+
 
 sound_list_sp: dict[int, tuple[str, int | None, float]] = {
   # AudibleAlertSP, file name, play count (none for infinite)
@@ -80,10 +89,13 @@ class Soundd(QuietMode):
   def __init__(self):
     super().__init__()
 
+    self.alert_volume_boost: int = self._read_alert_volume_boost()
+
     self.load_sounds()
 
     self.current_alert = AudibleAlert.none
     self.current_volume = MIN_VOLUME
+    self.current_volume_boosted = MIN_VOLUME
     self.current_sound_frame = 0
 
     self.ramp_start_volume = MIN_VOLUME
@@ -94,8 +106,20 @@ class Soundd(QuietMode):
 
     self.spl_filter_weighted = FirstOrderFilter(0, 2.5, FILTER_DT, initialized=False)
 
+  def _read_alert_volume_boost(self) -> int:
+    try:
+      value = int(self.params.get("AlertVolumeBoost", return_default=True) or "0")
+    except (ValueError, TypeError):
+      return 0
+    return max(0, min(ALERT_VOLUME_BOOST_MAX, value))
+
+  def load_param(self) -> None:
+    super().load_param()
+    self.alert_volume_boost = self._read_alert_volume_boost()
+
   def load_sounds(self):
     self.loaded_sounds: dict[int, np.ndarray] = {}
+    self.loaded_sound_peaks: dict[int, float] = {}
 
     # Load all sounds
     for sound in sound_list:
@@ -107,7 +131,9 @@ class Soundd(QuietMode):
         assert wavefile.getframerate() == SAMPLE_RATE
 
         length = wavefile.getnframes()
-        self.loaded_sounds[sound] = np.frombuffer(wavefile.readframes(length), dtype=np.int16).astype(np.float32) / (2**16/2)
+        data = np.frombuffer(wavefile.readframes(length), dtype=np.int16).astype(np.float32) / (2**16/2)
+        self.loaded_sounds[sound] = data
+        self.loaded_sound_peaks[sound] = float(np.max(np.abs(data))) or 1.0  # source peak (1.0 if silent)
 
   def get_sound_data(self, frames): # get "frames" worth of data from the current alert sound, looping when required
 
@@ -134,7 +160,13 @@ class Soundd(QuietMode):
           self.pending_stop = False
           break
 
-    return ret * self.current_volume
+    if self.current_alert in BOOST_EXCLUDED_ALERTS:
+      volume = self.current_volume
+    else:
+      # cap at the sound's clean headroom: never exceed full scale, never shape
+      volume = min(self.current_volume_boosted, 1.0 / self.loaded_sound_peaks.get(self.current_alert, 1.0))
+    out = ret * volume
+    return out
 
   def callback(self, data_out: np.ndarray, frames: int, time, status) -> None:
     if status:
@@ -209,6 +241,16 @@ class Soundd(QuietMode):
           elapsed = time.monotonic() - self.ramp_start_time
           ramp_vol = float(np.interp(elapsed, [0, ALERT_RAMP_TIME], [self.ramp_start_volume, MAX_VOLUME]))
           self.current_volume = max(self.current_volume, ramp_vol)
+
+        # dB-domain boost of current_volume (log10/pow stay here, out of the
+        # audio callback). Exclusion + per-sound peak cap remain in get_sound_data.
+        if self.alert_volume_boost and self.current_volume > 0:
+          cv_db = 20.0 * math.log10(self.current_volume)
+          v_frac = self.alert_volume_boost / 100.0
+          eff_db = max(cv_db * (1.0 - v_frac), cv_db + v_frac * ALERT_VOLUME_BOOST_DB)
+          self.current_volume_boosted = math.pow(10.0, eff_db / 20.0)
+        else:
+          self.current_volume_boosted = self.current_volume
 
         rk.keep_time()
 

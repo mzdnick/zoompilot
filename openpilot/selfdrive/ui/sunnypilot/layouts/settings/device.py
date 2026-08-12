@@ -87,6 +87,17 @@ class DeviceLayoutSP(DeviceLayout):
     )
     self._quiet_mode_and_dcam.action_item.right_button.set_button_style(ButtonStyle.NORMAL)
 
+    self._volume_boost = option_item_sp(
+      title=lambda: tr("Alert Volume Boost"),
+      description=lambda: tr("Extra loudness for audible alerts. 0% is normal."),
+      param="AlertVolumeBoost",
+      min_value=0,
+      max_value=100,
+      value_change_step=20,
+      label_callback=lambda v: f"{v}%",
+      inline=True,
+    )
+
     self._reg_and_training = dual_button_item_sp(
       left_text=lambda: tr("Regulatory"),
       left_callback=self._on_regulatory,
@@ -125,6 +136,7 @@ class DeviceLayoutSP(DeviceLayout):
       self._max_time_offroad,
       LineSeparator(height=10),
       self._quiet_mode_and_dcam,
+      self._volume_boost,
       self._reg_and_training,
       self._onroad_uploads_and_reset_settings,
       Spacer(10),
