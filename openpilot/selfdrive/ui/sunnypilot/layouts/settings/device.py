@@ -8,6 +8,7 @@ from openpilot.selfdrive.ui.layouts.settings.device import DeviceLayout
 from openpilot.selfdrive.ui.onroad.driver_camera_dialog import DriverCameraDialog
 from openpilot.selfdrive.ui.ui_state import ui_state
 from openpilot.common.hardware import HARDWARE
+from openpilot.common.params import UnknownKeyName
 from openpilot.system.ui.lib.application import gui_app
 from openpilot.system.ui.lib.multilang import tr
 from openpilot.system.ui.sunnypilot.widgets.list_view import option_item_sp, multiple_button_item_sp, button_item_sp, \
@@ -18,6 +19,15 @@ from openpilot.system.ui.widgets.confirm_dialog import alert_dialog, ConfirmDial
 from openpilot.system.ui.widgets.list_view import text_item
 from openpilot.system.ui.widgets.scroller_tici import LineSeparator
 from openpilot.sunnypilot.selfdrive.ui.offroad_mode import request_offroad_mode
+
+
+def _get_legacy_sounds_enabled() -> bool:
+  # Read UseLegacySounds. On a prebuilt branch the compiled params table may not
+  # know this key yet, so UnknownKeyName must return False instead of crashing.
+  try:
+    return ui_state.params.get_bool("UseLegacySounds")
+  except UnknownKeyName:
+    return False
 
 offroad_time_options = {
   0: 0,
@@ -90,7 +100,7 @@ class DeviceLayoutSP(DeviceLayout):
     # Using dual button with no right button for better alignment
     self._legacy_sounds_btn = dual_button_item_sp(
       left_text=lambda: tr("Legacy Sounds"),
-      left_callback=lambda: ui_state.params.put_bool("UseLegacySounds", not ui_state.params.get_bool("UseLegacySounds")),
+      left_callback=lambda: ui_state.params.put_bool("UseLegacySounds", not _get_legacy_sounds_enabled()),
       right_text="",
       right_callback=None,
     )
@@ -222,7 +232,7 @@ class DeviceLayoutSP(DeviceLayout):
 
     # Legacy Sounds button
     self._legacy_sounds_btn.action_item.left_button.set_button_style(
-      ButtonStyle.PRIMARY if ui_state.params.get_bool("UseLegacySounds") else ButtonStyle.NORMAL
+      ButtonStyle.PRIMARY if _get_legacy_sounds_enabled() else ButtonStyle.NORMAL
     )
 
     # Onroad Uploads

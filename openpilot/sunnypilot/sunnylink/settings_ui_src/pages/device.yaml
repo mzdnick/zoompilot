@@ -27,6 +27,9 @@ sections:
   - key: QuietMode
     widget: toggle
     title: Quiet Mode
+  - key: UseLegacySounds
+    widget: toggle
+    title: Legacy Sounds
   - key: OnroadUploads
     widget: toggle
     title: Onroad Uploads

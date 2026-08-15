@@ -7,6 +7,7 @@ import wave
 from openpilot.cereal import log, messaging, custom
 from openpilot.common.basedir import BASEDIR
 from openpilot.common.filter_simple import FirstOrderFilter
+from openpilot.common.params import UnknownKeyName
 from openpilot.common.realtime import Ratekeeper
 from openpilot.common.utils import retry
 from openpilot.common.swaglog import cloudlog
@@ -25,11 +26,13 @@ SELFDRIVE_STATE_TIMEOUT = 5 # 5 seconds
 FILTER_DT = 1. / (micd.SAMPLE_RATE / micd.FFT_SAMPLES)
 
 AMBIENT_DB = 26 # DB where MIN_VOLUME is applied
+AMBIENT_DB_LEGACY = 24 # pre-#38154 value, used when UseLegacySounds is on
 DB_SCALE = 30 # AMBIENT_DB + DB_SCALE is where MAX_VOLUME is applied
 
 VOLUME_BASE = 20
 if HARDWARE.get_device_type() == "tizi":
   AMBIENT_DB = 30
+  AMBIENT_DB_LEGACY = 30
   VOLUME_BASE = 10
 
 AudibleAlert = log.SelfdriveState.AudibleAlert
@@ -97,7 +100,8 @@ class Soundd(QuietMode):
   def __init__(self):
     super().__init__()
 
-    self.use_legacy_sounds: bool = self.params.get_bool("UseLegacySounds")
+    self.use_legacy_sounds: bool = self._read_legacy_sounds_param()
+    self.ambient_db = AMBIENT_DB_LEGACY if self.use_legacy_sounds else AMBIENT_DB
     self.sound_list = self._active_sound_list()
 
     self.load_sounds()
@@ -116,11 +120,19 @@ class Soundd(QuietMode):
 
   def load_param(self) -> None:
     super().load_param()
-    use_legacy_sounds = self.params.get_bool("UseLegacySounds")
+    use_legacy_sounds = self._read_legacy_sounds_param()
     if use_legacy_sounds != self.use_legacy_sounds:
       self.use_legacy_sounds = use_legacy_sounds
+      self.ambient_db = AMBIENT_DB_LEGACY if self.use_legacy_sounds else AMBIENT_DB
       self.sound_list = self._active_sound_list()
       self.load_sounds()
+
+  def _read_legacy_sounds_param(self) -> bool:
+    # prebuilt builds may not know this key yet; fail safe to off
+    try:
+      return self.params.get_bool("UseLegacySounds")
+    except UnknownKeyName:
+      return False
 
   def _active_sound_list(self) -> dict[int, tuple[str, int | None, float]]:
     active_sound_list = sound_list
@@ -211,7 +223,7 @@ class Soundd(QuietMode):
       self.selfdrive_timeout_alert = False
 
   def calculate_volume(self, weighted_db):
-    volume = ((weighted_db - AMBIENT_DB) / DB_SCALE) * (MAX_VOLUME - MIN_VOLUME) + MIN_VOLUME
+    volume = ((weighted_db - self.ambient_db) / DB_SCALE) * (MAX_VOLUME - MIN_VOLUME) + MIN_VOLUME
     return math.pow(VOLUME_BASE, (np.clip(volume, MIN_VOLUME, MAX_VOLUME) - 1))
 
   @retry(attempts=10, delay=3)
