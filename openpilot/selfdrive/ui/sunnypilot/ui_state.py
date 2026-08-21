@@ -4,6 +4,7 @@ Copyright (c) 2021-, Haibin Wen, sunnypilot, and a number of other contributors.
 This file is part of sunnypilot and is licensed under the MIT License.
 See the LICENSE.md file in the root directory for more details.
 """
+import os
 from enum import Enum
 
 from openpilot.cereal import messaging, log, custom
@@ -19,6 +20,9 @@ OpenpilotState = log.SelfdriveState.OpenpilotState
 MADSState = custom.ModularAssistiveDrivingSystem.ModularAssistiveDrivingSystemState
 
 ONROAD_BRIGHTNESS_TIMER_PAUSED = -1
+
+_FPS_OVERRIDE = os.getenv("FPS")
+UI_OFFROAD_FPS = int(os.getenv("UI_OFFROAD_FPS", _FPS_OVERRIDE or "60"))
 
 
 class OnroadTimerStatus(Enum):
@@ -63,12 +67,18 @@ class UIStateSP:
     self.custom_torque_params: bool = False
     self.torque_override_enabled: bool = False
     self._sp_initialized: bool = False
+    self._stock_fps: int | None = None
 
   def update(self) -> None:
     if self.sunnylink_enabled:
       self.sunnylink_state.start()
     else:
       self.sunnylink_state.stop()
+
+    # lift offroad UI to 60 fps; onroad keeps the stock per-device default
+    if self._stock_fps is None:
+      self._stock_fps = gui_app.target_fps
+    gui_app.set_target_fps(self._stock_fps if self.started else UI_OFFROAD_FPS)
 
   def onroad_brightness_handle_alerts(self, _ui_state, alert):
     if _ui_state.sm.recv_frame["carState"] < _ui_state.started_frame:

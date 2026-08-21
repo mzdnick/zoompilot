@@ -8,8 +8,11 @@ import os
 
 import pyray as rl
 
+from openpilot.system.hardware import HARDWARE
+
 SHOW_MOUSE_COORDS = os.getenv("SHOW_MOUSE_COORDS") == "1"
 SUNNYPILOT_UI = os.getenv("SUNNYPILOT_UI", "1") == "1"
+OFFSCREEN = os.getenv("OFFSCREEN") == "1"
 
 
 class GuiApplicationExt:
@@ -38,3 +41,10 @@ class GuiApplicationExt:
 
   def set_show_mouse_coords(self, show: bool):
     self._show_mouse_coords = show
+
+  def set_target_fps(self, fps: int):
+    if OFFSCREEN or fps == self._target_fps or not rl.is_window_ready():
+      return
+    # keep init_window pacing: vblank drives mici, the timer caps the rest
+    rl.set_target_fps(0 if HARDWARE.get_device_type() == 'mici' else fps)
+    self._target_fps = fps
