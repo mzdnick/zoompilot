@@ -26,7 +26,6 @@ class ScreenSaverSP(Widget):
     self.x = 0.0
     self.y = 100.0
     self.vx = 120.0 if self._is_mici else 300.0
-    self.vy = 70.0 if self._is_mici else 200.0
     self._hue = 150
     self.color = rl.color_from_hsv(self._hue, 1, 1)
 
@@ -35,7 +34,7 @@ class ScreenSaverSP(Widget):
     self._start_time = None
     self._dismiss = False
     self._screensaver_timeout = 300
-    self._hit_last_frame = False
+    self._need_spawn = True
 
   @property
   def is_active(self) -> bool:
@@ -55,12 +54,21 @@ class ScreenSaverSP(Widget):
     super().hide_event()
     self._dismiss = False
     self._start_time = None
+    self._need_spawn = True
 
   def _handle_mouse_release(self, mouse_pos):
     self._dismiss = True
     self._start_time = None
     gui_app.pop_widget()
     return super()._handle_mouse_release(mouse_pos)
+
+  def _spawn(self):
+    self.x = -self.logo_width
+    self.y = rl.get_random_value(0, max(int(self.rect.height - self.logo_height), 0))
+    while self._hue_dist((new_hue := rl.get_random_value(0, 360)), self._hue) < 120:
+      pass
+    self._hue = new_hue
+    self.color = rl.color_from_hsv(self._hue, 1, 1)
 
   def _update_state(self):
     super()._update_state()
@@ -74,37 +82,13 @@ class ScreenSaverSP(Widget):
       self._dismiss = True
       self._start_time = None
 
-    dt = rl.get_frame_time()
-
-    self.x += self.vx * dt
-    self.y += self.vy * dt
-
-    hit_x = hit_y = False
-    if self.x + self.logo_width > self.rect.width:
-      self.vx *= -1
-      self.x = self.rect.width - self.logo_width
-      hit_x = True
-    elif self.x < 0:
-      self.vx *= -1
-      self.x = 0
-      hit_x = True
-
-    if self.y + self.logo_height > self.rect.height:
-      self.vy *= -1
-      self.y = self.rect.height - self.logo_height
-      hit_y = True
-    elif self.y < 0:
-      self.vy *= -1
-      self.y = 0
-      hit_y = True
-
-    hit = hit_x or hit_y
-    if hit and not self._hit_last_frame:
-      while self._hue_dist((new_hue := rl.get_random_value(0, 360)), self._hue) < 120:
-        pass
-      self._hue = new_hue
-      self.color = rl.color_from_hsv(self._hue, 1, 1)
-    self._hit_last_frame = hit
+    if self._need_spawn:
+      self._spawn()
+      self._need_spawn = False
+    else:
+      self.x += self.vx * rl.get_frame_time()
+      if self.x > self.rect.width:
+        self._spawn()
 
   @staticmethod
   def _hue_dist(a, b):
