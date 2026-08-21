@@ -29,6 +29,7 @@ void ui_update(float dt){ intro += dt; }
 void ui_fps_toggle(void){ showFps = !showFps; }
 
 void ui_draw(int w, int h){
+    float sc = (float)h/720.0f;
     Rectangle src = { 0, 0, 256, 144 };
     Rectangle dst = { 0, 0, (float)w, (float)h };
     DrawTexturePro(vign, src, dst, (Vector2){ 0, 0 }, 0.0f, WHITE);
@@ -42,12 +43,14 @@ void ui_draw(int w, int h){
     if (ta > 0.01f){
         const char *title = "I N F I N I T E   D R I V E";
         Font f = GetFontDefault();
-        Vector2 ts = MeasureTextEx(f, title, 24, 2);
-        DrawTextEx(f, title, (Vector2){ (float)w*0.5f - ts.x*0.5f, (float)h - 78 }, 24, 2,
+        float tsz = 24.0f*sc;
+        Vector2 ts = MeasureTextEx(f, title, tsz, 2);
+        DrawTextEx(f, title, (Vector2){ (float)w*0.5f - ts.x*0.5f, (float)h - 78.0f*sc }, tsz, 2,
                    col_a((Color){ 205, 215, 228, 255 }, ta*0.9f));
         const char *sub = "autonomous night drive";
-        Vector2 ss = MeasureTextEx(f, sub, 10, 2);
-        DrawTextEx(f, sub, (Vector2){ (float)w*0.5f - ss.x*0.5f, (float)h - 46 }, 10, 2,
+        float ssz = 10.0f*sc;
+        Vector2 ss = MeasureTextEx(f, sub, ssz, 2);
+        DrawTextEx(f, sub, (Vector2){ (float)w*0.5f - ss.x*0.5f, (float)h - 46.0f*sc }, ssz, 2,
                    col_a((Color){ 150, 160, 175, 255 }, ta*0.7f));
     }
 

@@ -14,6 +14,7 @@ from openpilot.sunnypilot.sunnylink.sunnylink_state import SunnylinkState
 from openpilot.sunnypilot.selfdrive.ui.offroad_mode import request_offroad_mode
 from openpilot.system.ui.lib.application import gui_app
 from openpilot.system.ui.sunnypilot.widgets.screen_saver import ScreenSaverSP
+from openpilot.system.ui.sunnypilot.widgets.screen_saver_3d import ScreenSaver3D
 
 OpenpilotState = log.SelfdriveState.OpenpilotState
 MADSState = custom.ModularAssistiveDrivingSystem.ModularAssistiveDrivingSystemState
@@ -40,7 +41,7 @@ class UIStateSP:
 
     self.sunnylink_state = SunnylinkState()
 
-    self.screensaver = ScreenSaverSP(params=self.params)
+    self.screensaver = ScreenSaver3D(params=self.params) if ScreenSaver3D.available() else ScreenSaverSP(params=self.params)
     self.screensaver_enabled: bool = False
 
     self.active_bundle = None

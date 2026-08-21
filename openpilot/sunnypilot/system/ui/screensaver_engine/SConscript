@@ -1,0 +1,17 @@
+import importlib.util
+from pathlib import Path
+
+Import('env')
+
+# The engine draws into the UI process's raylib context. raylib ships inside
+# the python package (statically linked into the cffi extension), so the
+# library is built with raylib symbols undefined and binds to the loader's
+# instance at load time. Do not link raylib here.
+raylib_dir = Path(importlib.util.find_spec("raylib").submodule_search_locations[0]) / "install"
+
+engine_env = env.Clone()
+engine_env['CPPPATH'] += [str(raylib_dir / "include"), "screensaver_engine/engine"]
+
+src = Glob("screensaver_engine/engine/*.c")
+screensaver_engine = engine_env.SharedLibrary("screensaver_engine/libinfinite_drive", src, LIBS=["m"])
+Export('screensaver_engine')
