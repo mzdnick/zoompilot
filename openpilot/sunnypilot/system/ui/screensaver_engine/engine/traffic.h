@@ -17,5 +17,6 @@ float traffic_ego_s(void);
 float traffic_ego_v(void);
 float traffic_ego_lat(void);
 int   traffic_ego_target_lane(void);
+int   traffic_ego_blinker(void);        // -1 left, +1 right, 0 centered
 void  traffic_draw(void);
 int   traffic_query(VehInfo *out, int max);

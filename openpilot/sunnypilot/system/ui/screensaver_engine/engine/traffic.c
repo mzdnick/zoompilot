@@ -20,6 +20,8 @@ typedef struct {
     float detect;
     Rng   rng;
     float decideT, laneTimer;
+    int8_t signal;      // local side: -1 left, +1 right
+    float  signalT;
 } Npc;
 
 static struct {
@@ -28,6 +30,7 @@ static struct {
     float s, v, lat;
     int   lane, targetLane;
     float decideT;
+    float boxT;
     float wave, waveTarget, waveT;
     float simT;
     int   lastLaneChangeSign;
@@ -77,7 +80,14 @@ static float lane_lat(int dir, int lane){
     return lane == 1 ? -LANE_SLOW : -LANE_FAST;
 }
 
+int traffic_ego_blinker(void){
+    float latT = lane_lat(1, T.targetLane);
+    if (fabsf(latT - T.lat) < 0.35f) return 0;
+    return (latT < T.lat) ? -1 : 1;   // toward lane 0 is the left side
+}
+
 static inline float vminf(float a, float b){ return a < b ? a : b; }
+static inline float vmaxf(float a, float b){ return a > b ? a : b; }
 
 static const unsigned char PAL[][3] = {
     { 240, 240, 242 }, { 168, 172, 178 }, { 84, 88, 94 }, { 36, 40, 46 },
@@ -88,6 +98,15 @@ static const unsigned char PAL[][3] = {
 static void npc_spawn(int i, float atS){
     Npc *n = &T.np[i];
     memset(n, 0, sizeof(*n));
+    // step the spawn point forward until it clears the ego and every NPC;
+    // a stacked spawn would drive in lockstep forever (leader_gap blind spot)
+    for (int t = 0; t < 30; t++){
+        int hit = (fabsf(atS - T.s) < 22.0f);
+        for (int j = 0; j < NPC_MAX && !hit; j++)
+            if (j != i && T.np[j].active && fabsf(T.np[j].s - atS) < 16.0f) hit = 1;
+        if (!hit) break;
+        atS += 20.0f;
+    }
     n->active = 1;
     n->dir = (rng_int(&T.rng, 100) < 68) ? 1 : -1;
     n->lane = n->targetLane = rng_int(&T.rng, 100) < 58 ? 1 : 0;
@@ -98,7 +117,7 @@ static void npc_spawn(int i, float atS){
     int x = rng_int(&T.rng, 100);
     if (n->dir < 0 && x < 20) n->type = VT_TRUCK;
     else n->type = x < 45 ? VT_SEDAN : x < 70 ? VT_SUV : x < 85 ? VT_PICKUP : VT_TRUCK;
-    float base = (n->lane == 0) ? rng_range(&n->rng, 28.0f, 36.0f) : rng_range(&n->rng, 21.0f, 30.0f);
+    float base = (n->lane == 0) ? rng_range(&n->rng, 26.0f, 31.0f) : rng_range(&n->rng, 21.0f, 30.0f);
     if (n->type == VT_TRUCK) base -= 4.0f;
     n->cruise = base;
     n->v = base;
@@ -137,12 +156,27 @@ static float leader_gap(float s, int dir, int lane, float *outV, int *outIdx){
     return best;
 }
 
-static int lane_clear(float s, int dir, int lane, float margin){
+// directional gap check: fixed window ahead, speed-scaled window behind so a
+// merge never rear-ends an approaching follower; the ego (not in np[]) blocks
+// NPC merges too
+static int lane_clear2(float s, int dir, int lane, float back, float fwd, float vSelf){
     for (int i = 0; i < NPC_MAX; i++){
         Npc *n = &T.np[i];
         if (!n->active || n->dir != dir) continue;
         if (n->targetLane != lane && n->lane != lane) continue;
-        if (fabsf(n->s - s) < margin) return 0;
+        float d = (n->s - s)*dir;
+        float need = back;
+        if (d < 0.0f && n->v > vSelf) need = vmaxf(need, 8.0f + 2.6f*(n->v - vSelf));
+        if (d > -need && d < fwd) return 0;
+    }
+    if (dir > 0){
+        int egoMid = fabsf(T.lat - lane_lat(1, T.targetLane)) > 1.1f;
+        if (T.targetLane == lane || egoMid){
+            float d = T.s - s;
+            float need = back;
+            if (d < 0.0f && T.v > vSelf) need = vmaxf(need, 8.0f + 2.6f*(T.v - vSelf));
+            if (d > -need && d < fwd) return 0;
+        }
     }
     return 1;
 }
@@ -173,16 +207,17 @@ void traffic_update(float dt){
     // ---------- ego ----------
     uint8_t aheadFlags = road_flags_at(T.s + 150.0f);
     int constrAhead = (aheadFlags & SEG_CONSTRUCTION) != 0;
-    float vt = 29.0f;
-    if (zone == ZN_CITY) vt *= 0.78f;
+    float vtFree = 32.0f;
+    if (zone == ZN_CITY) vtFree *= 0.78f;
     float curvMax = 0.0f;
     for (int k = 0; k < 5; k++){
         float c = fabsf(road_curv_at(T.s + 20.0f*k));
         if (c > curvMax) curvMax = c;
     }
     float vmax = 3.2f/sqrtf(curvMax + 0.0004f);
-    if (vmax > 31.0f) vmax = 31.0f;
-    if (vmax < vt) vt = vmax;
+    if (vmax > 34.0f) vmax = 34.0f;
+    if (vmax < vtFree) vtFree = vmax;
+    float vt = vtFree;
     if (constrAhead) vt = vminf(vt, 20.0f);
 
     float lv;
@@ -192,27 +227,36 @@ void traffic_update(float dt){
         if (gap < 35.0f) vt = vminf(vt, lv + (gap - 16.0f)*0.22f);
         if (gap < 8.0f)  vt = vminf(vt, lv - 3.0f);
     }
-    T.v += clampf(vt - T.v, -3.0f*dt, 1.6f*dt);
+    T.v += clampf(vt - T.v, -3.0f*dt, 2.2f*dt);
     if (T.v < 12.0f) T.v = 12.0f;
     T.s += T.v*dt;
 
-    // ego lane choice
+    // ego lane choice: judged against the free cruise so settling behind a
+    // slow leader never disarms the pass decision
+    int slowLeader = (li >= 0 && gap < 90.0f && lv < vtFree - 1.5f);
+    if (slowLeader && T.targetLane == 1) T.boxT += dt; else T.boxT = 0.0f;
+    // boxed in: after 6 s of waiting accept a tighter merge gap
+    float backPass = (T.boxT > 6.0f) ? 28.0f : 45.0f;
     T.decideT -= dt;
     int wantLane = T.targetLane;
     if (constrAhead || (road_flags_at(T.s + 60.0f) & SEG_CONSTRUCTION)) wantLane = 0;
     else if (T.decideT <= 0.0f){
-        T.decideT = rng_range(&T.rng, 14.0f, 38.0f);
-        if (T.targetLane == 1 && li >= 0 && gap < 55.0f && lv < T.v - 2.5f
-            && lane_clear(T.s, 1, 0, 45.0f))
-            wantLane = 0;
-        else if (T.targetLane == 0 && lane_clear(T.s, 1, 1, 55.0f))
-            wantLane = 1;
+        if (slowLeader && T.targetLane == 1){
+            T.decideT = rng_range(&T.rng, 1.5f, 3.5f);
+            if (lane_clear2(T.s, 1, 0, backPass, 20.0f, T.v)) wantLane = 0;
+        } else {
+            T.decideT = rng_range(&T.rng, 4.0f, 9.0f);
+            if (T.targetLane == 0 && lane_clear2(T.s, 1, 1, 50.0f, 25.0f, T.v))
+                wantLane = 1;
+        }
     }
     if (wantLane != T.targetLane){
-        if (lane_clear(T.s, 1, wantLane, 45.0f)) T.targetLane = wantLane;
+        int ok = (wantLane == 0) ? lane_clear2(T.s, 1, 0, backPass, 20.0f, T.v)
+                                 : lane_clear2(T.s, 1, 1, 50.0f, 25.0f, T.v);
+        if (ok) T.targetLane = wantLane;
     }
     float latT = lane_lat(1, T.targetLane);
-    T.lat += (latT - T.lat)*clampf(dt*0.85f, 0.0f, 1.0f);
+    T.lat += (latT - T.lat)*clampf(dt*1.05f, 0.0f, 1.0f);
 
     // ---------- NPCs ----------
     int active = 0;
@@ -220,6 +264,7 @@ void traffic_update(float dt){
         Npc *n = &T.np[i];
         if (!n->active) continue;
         active++;
+        if (n->signalT > 0.0f) n->signalT -= dt;
 
         // recycle
         if (n->dir > 0){
@@ -263,7 +308,7 @@ void traffic_update(float dt){
             if (nvt < n->v - 0.8f) braking = 1;
         }
         n->braking = braking;
-        n->v += clampf(nvt - n->v, -3.4f*dt, 1.3f*dt);
+        n->v += clampf(nvt - n->v, -3.4f*dt, 1.5f*dt);
         if (n->v < 8.0f) n->v = 8.0f;
         n->s += (n->dir > 0 ? n->v : -n->v)*dt;
 
@@ -274,24 +319,28 @@ void traffic_update(float dt){
             n->laneTimer += n->decideT;
             if (n->dir > 0){
                 int blocked = (li2 >= 0 && g2 < 45.0f && lv2 < n->cruise - 1.5f);
-                if (blocked && n->targetLane == 1 && lane_clear(n->s, 1, 0, 38.0f)){
+                if (blocked && n->targetLane == 1 && lane_clear2(n->s, 1, 0, 38.0f, 12.0f, n->v)){
                     n->changing = 1; n->changeT = 0;
                     n->fromLat = n->lat; n->toLat = lane_lat(1, 0); n->targetLane = 0;
-                } else if (n->targetLane == 0 && n->laneTimer > 11.0f && lane_clear(n->s, 1, 1, 42.0f)){
+                    n->signal = -1; n->signalT = 3.4f;
+                } else if (n->targetLane == 0 && n->laneTimer > 11.0f && lane_clear2(n->s, 1, 1, 40.0f, 15.0f, n->v)){
                     n->changing = 1; n->changeT = 0;
                     n->fromLat = n->lat; n->toLat = lane_lat(1, 1); n->targetLane = 1;
                     n->laneTimer = 0.0f;
+                    n->signal = 1; n->signalT = 3.4f;
                 }
             } else {
                 // oncoming mirror: their fast lane is index 0
                 int blocked = (li2 >= 0 && g2 < 45.0f && lv2 < n->cruise - 1.5f);
-                if (blocked && n->targetLane == 1 && lane_clear(n->s, -1, 0, 38.0f)){
+                if (blocked && n->targetLane == 1 && lane_clear2(n->s, -1, 0, 38.0f, 12.0f, n->v)){
                     n->changing = 1; n->changeT = 0;
                     n->fromLat = n->lat; n->toLat = lane_lat(-1, 0); n->targetLane = 0;
-                } else if (n->targetLane == 0 && n->laneTimer > 11.0f && lane_clear(n->s, -1, 1, 42.0f)){
+                    n->signal = -1; n->signalT = 3.4f;
+                } else if (n->targetLane == 0 && n->laneTimer > 11.0f && lane_clear2(n->s, -1, 1, 40.0f, 15.0f, n->v)){
                     n->changing = 1; n->changeT = 0;
                     n->fromLat = n->lat; n->toLat = lane_lat(-1, 1); n->targetLane = 1;
                     n->laneTimer = 0.0f;
+                    n->signal = 1; n->signalT = 3.4f;
                 }
             }
         }
@@ -320,9 +369,26 @@ void traffic_update(float dt){
     }
 }
 
+// ego blinker: amber corner glow plus spill on the road, in the cam's own
+// driver-eye view (the ego body itself is not drawn)
+static void ego_signal_lights(void){
+    int bl = traffic_ego_blinker();
+    if (!bl) return;
+    if (fmodf(T.simT*1.4f, 1.0f) >= 0.55f) return;
+    Vector3 pos, fwd, right, up;
+    road_frame(T.s, &pos, &fwd, &right, &up);
+    float side = (bl < 0) ? -1.0f : 1.0f;
+    Vector3 c = Vector3Add(Vector3Add(pos, Vector3Scale(right, T.lat + side*0.92f)),
+                           Vector3Scale(fwd, 2.30f));
+    Color amber = { 255, 178, 48, 255 };
+    glow_add((Vector3){ c.x, c.y + 0.72f, c.z }, amber, 0.24f, 1.0f, 0.40f);
+    flatspot_add((Vector3){ c.x, c.y + 0.02f, c.z }, right, fwd, 0.95f, 1.45f, amber, 0.14f);
+}
+
 void traffic_draw(void){
     float lights = envl.lightsOn;
     float wet = weather_wet();
+    ego_signal_lights();
     for (int i = 0; i < NPC_MAX; i++){
         Npc *n = &T.np[i];
         if (!n->active) continue;
@@ -331,8 +397,11 @@ void traffic_draw(void){
         road_frame(n->s, &pos, &fwd, &right, &up);
         pos = Vector3Add(pos, Vector3Scale(right, n->lat));
         if (n->dir < 0){ fwd = Vector3Scale(fwd, -1.0f); right = Vector3Scale(right, -1.0f); }
+        int bl = 0;
+        if (n->signalT > 0.0f && fmodf(T.simT*1.4f + n->s*0.31f, 1.0f) < 0.55f)
+            bl = n->signal;
         vehicle_draw(pos, fwd, right, n->type, n->col, n->col2, lights,
-                     n->braking ? 1.0f : 0.0f, wet, n->dir < 0);
+                     n->braking ? 1.0f : 0.0f, wet, n->dir < 0, bl);
     }
 }
 

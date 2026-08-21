@@ -37,7 +37,7 @@ static void wheels(Vector3 pos, Vector3 r, Vector3 u, Vector3 f,
 
 void vehicle_draw(Vector3 pos, Vector3 fwd, Vector3 right, int type,
                   Color col, Color col2, float lights, float brake,
-                  float wet, int oncoming){
+                  float wet, int oncoming, int blinker){
     float l, w, h;
     vehicle_dims(type, &l, &w, &h);
     Vector3 up = Vector3Normalize(Vector3CrossProduct(right, fwd));
@@ -92,6 +92,18 @@ void vehicle_draw(Vector3 pos, Vector3 fwd, Vector3 right, int type,
     box(pos, right, up, fwd, -hx, frontY,  hz, 0.11f, 0.08f, 0.03f, headC, headEmis);
     box(pos, right, up, fwd,  hx*0.95f, rearY, -hz, 0.12f, 0.07f, 0.03f, tailC, tailEmis);
     box(pos, right, up, fwd, -hx*0.95f, rearY, -hz, 0.12f, 0.07f, 0.03f, tailC, tailEmis);
+    if (blinker){
+        int s = (blinker > 0) ? 1 : -1;
+        Color bc = { 255, 178, 48, 255 };
+        box(pos, right, up, fwd, s*hx, frontY, hz, 0.10f, 0.07f, 0.03f, bc, 1.0f);
+        box(pos, right, up, fwd, s*hx*0.95f, rearY, -hz, 0.11f, 0.07f, 0.03f, bc, 1.0f);
+        Vector3 fp = Vector3Add(pos, Vector3Add(Vector3Scale(right, s*hx),
+            Vector3Add(Vector3Scale(up, frontY), Vector3Scale(fwd, hz))));
+        Vector3 rp = Vector3Add(pos, Vector3Add(Vector3Scale(right, s*hx*0.95f),
+            Vector3Add(Vector3Scale(up, rearY), Vector3Scale(fwd, -hz))));
+        glow_add(fp, bc, 0.30f, 1.0f, 0.26f);
+        glow_add(rp, bc, 0.34f, 1.0f, 0.30f);
+    }
     if (type == VT_TRUCK){
         // marker lights along the trailer top edge and rear corners
         Color mk = { 255, 176, 64, 255 };

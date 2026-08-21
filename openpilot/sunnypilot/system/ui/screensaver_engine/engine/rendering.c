@@ -332,9 +332,6 @@ static struct { float a; float t; float pulse; } adas;
 
 void render_adas_time(float simTime){ adas.t = simTime; }
 
-#define PATH_N 24
-static Vector2 pathPts[PATH_N];
-static int      pathValid[PATH_N];
 static VehInfo  veh[32];
 static int      vehN;
 static int      leadIdx = -1;
@@ -354,7 +351,7 @@ static void draw_corner_ticks(Rectangle rec, float len, float thick, Color c){
 }
 
 static void adas_project(Camera3D cam, float sCam, float dt){
-    (void)dt;
+    (void)cam; (void)sCam; (void)dt;
     float ph = fmodf(adas.t, 28.0f);
     float onT = 0.0f;
     if (adas.t > 8.0f) onT = (ph < 16.0f) ? 1.0f : 0.0f;
@@ -362,23 +359,10 @@ static void adas_project(Camera3D cam, float sCam, float dt){
     else adas.a += (onT - adas.a)*clampf(dt*1.4f, 0.0f, 1.0f);    // fade otherwise
     adas.pulse = 0.88f + 0.12f*sinf(adas.t*3.1f);
 
-    float egoLat = traffic_ego_lat();
-    float latT = (traffic_ego_target_lane() == 1) ? LANE_SLOW : LANE_FAST;
-    for (int k = 0; k < PATH_N; k++){
-        float s = sCam + (float)k*6.0f;
-        float u = clampf((float)k/6.0f, 0.0f, 1.0f);
-        float lat = lerpf(egoLat, latT, u);
-        Vector3 p = road_point(s, lat, 0.12f);
-        Vector3 d = Vector3Subtract(p, cam.position);
-        if (Vector3DotProduct(d, shFwd) < 1.0f){ pathValid[k] = 0; continue; }
-        pathPts[k] = GetWorldToScreen(p, cam);
-        pathValid[k] = 1;
-    }
-
     vehN = traffic_query(veh, 32);
     leadIdx = -1;
     float best = 1e9f;
-    float egoLaneLat = latT;
+    float egoLaneLat = (traffic_ego_target_lane() == 1) ? LANE_SLOW : LANE_FAST;
     for (int i = 0; i < vehN; i++){
         if (veh[i].dir < 0) continue;
         if (fabsf(veh[i].lat - egoLaneLat) > 2.4f) continue;
@@ -391,33 +375,14 @@ static void adas_project(Camera3D cam, float sCam, float dt){
 }
 
 static void adas_draw2d(Camera3D cam, float sCam){
-    if (adas.a < 0.02f) return;
-    float A = adas.a*adas.pulse;
     int w = GetScreenWidth(), h = GetScreenHeight();
     float scale = (float)h/720.0f;
 
-    Color cPath = { 110, 205, 255, 255 };
+    if (adas.a < 0.02f) return;
+    float A = adas.a*adas.pulse;
+
     Color cLane = { 110, 205, 255, 255 };
     Color cBox  = { 140, 225, 255, 255 };
-
-    // planned path ribbon
-    for (int k = 0; k + 1 < PATH_N; k++){
-        if (!pathValid[k] || !pathValid[k + 1]) continue;
-        float u = (float)k/(float)(PATH_N - 1);
-        float wd = lerpf(11.0f, 2.5f, u)*scale;
-        float alpha = A*lerpf(0.30f, 0.04f, u);
-        Vector2 dir = Vector2Subtract(pathPts[k + 1], pathPts[k]);
-        float len = sqrtf(dir.x*dir.x + dir.y*dir.y);
-        if (len < 0.5f) continue;
-        Vector2 nrm = (Vector2){ -dir.y/len, dir.x/len };
-        Vector2 a = Vector2Add(pathPts[k], (Vector2){ nrm.x*wd, nrm.y*wd });
-        Vector2 b = Vector2Subtract(pathPts[k], (Vector2){ nrm.x*wd, nrm.y*wd });
-        Vector2 c = Vector2Subtract(pathPts[k + 1], (Vector2){ nrm.x*wd, nrm.y*wd });
-        Vector2 d = Vector2Add(pathPts[k + 1], (Vector2){ nrm.x*wd, nrm.y*wd });
-        Color fill = col_a(cPath, alpha);
-        DrawTriangle(a, b, c, fill);
-        DrawTriangle(a, c, d, fill);
-    }
 
     // lane edge dashes
     float egoLat = traffic_ego_lat();
@@ -480,10 +445,7 @@ static void adas_draw2d(Camera3D cam, float sCam){
     float ph = fmodf(adas.t, 30.0f);
     const char *label = NULL;
     Vector2 lpos = { (float)w*0.5f, (float)h*0.66f };
-    if (ph > 3.0f && ph < 9.0f && pathValid[3]){
-        label = "PATH";
-        lpos = Vector2Add(pathPts[3], (Vector2){ 14, -10 });
-    } else if (ph > 13.0f && ph < 19.0f){
+    if (ph > 13.0f && ph < 19.0f){
         label = "LANE";
         Vector3 p = road_point(sCam + 30.0f, egoLat + LANE_W*0.5f, 0.1f);
         Vector2 sp = GetWorldToScreen(p, cam);
@@ -541,6 +503,14 @@ void render_frame(Camera3D cam, float sCam, float dt){
     nGlow = nFlat = nSign = 0;
 
     BeginMode3D(cam);
+    // face windings are mixed (geo_box inside-out, cylinder sides outward),
+    // so culling eats body panels; the depth buffer alone must do occlusion
+    rlDisableBackfaceCulling();
+    // BeginMode3D hardcodes a 0.01 near plane; that flattens depth precision
+    // at range until wheels bleed through body panels. Nothing legit renders
+    // closer than 0.5 m, so tighten the near plane for the whole 3D pass.
+    rlSetMatrixProjection(MatrixPerspective(cam.fovy*DEG2RAD,
+        (float)GetScreenWidth()/(float)GetScreenHeight(), 0.5f, 1000.0f));
     rlSetTexture(whiteTex.id);
     rlBegin(RL_TRIANGLES);
     road_draw(sCam);
