@@ -23,18 +23,15 @@ class ScreenSaverSP(Widget):
     self._params = params or Params()
     self._is_mici = HARDWARE.get_device_type() == 'mici' or (HARDWARE.get_device_type() == "pc" and os.getenv("BIG") != "1")
 
-    self.x = 0.0
-    self.y = 100.0
-    self.vx = 120.0 if self._is_mici else 300.0
+    self.vx = 180.0 if self._is_mici else 450.0
     self._hue = 150
-    self.color = rl.color_from_hsv(self._hue, 1, 1)
+    self._sweeps = []
 
     self.text = "sunnypilot"
     self.font_size = 50 if self._is_mici else 200
     self._start_time = None
     self._dismiss = False
     self._screensaver_timeout = 300
-    self._need_spawn = True
 
   @property
   def is_active(self) -> bool:
@@ -54,7 +51,7 @@ class ScreenSaverSP(Widget):
     super().hide_event()
     self._dismiss = False
     self._start_time = None
-    self._need_spawn = True
+    self._sweeps = []
 
   def _handle_mouse_release(self, mouse_pos):
     self._dismiss = True
@@ -63,12 +60,11 @@ class ScreenSaverSP(Widget):
     return super()._handle_mouse_release(mouse_pos)
 
   def _spawn(self):
-    self.x = -self.logo_width
-    self.y = rl.get_random_value(0, max(int(self.rect.height - self.logo_height), 0))
+    y = rl.get_random_value(0, max(int(self.rect.height - self.logo_height), 0))
     while self._hue_dist((new_hue := rl.get_random_value(0, 360)), self._hue) < 120:
       pass
     self._hue = new_hue
-    self.color = rl.color_from_hsv(self._hue, 1, 1)
+    self._sweeps.append({'x': -self.logo_width, 'y': y, 'color': rl.color_from_hsv(new_hue, 1, 1)})
 
   def _update_state(self):
     super()._update_state()
@@ -82,13 +78,19 @@ class ScreenSaverSP(Widget):
       self._dismiss = True
       self._start_time = None
 
-    if self._need_spawn:
+    if not self._sweeps:
       self._spawn()
-      self._need_spawn = False
-    else:
-      self.x += self.vx * rl.get_frame_time()
-      if self.x > self.rect.width:
-        self._spawn()
+      return
+
+    dt = rl.get_frame_time()
+    for sweep in self._sweeps:
+      sweep['x'] += self.vx * dt
+
+    # new sweep enters the left edge as the newest starts exiting the right one
+    if self._sweeps[-1]['x'] + self.logo_width >= self.rect.width:
+      self._spawn()
+
+    self._sweeps = [s for s in self._sweeps if s['x'] <= self.rect.width]
 
   @staticmethod
   def _hue_dist(a, b):
@@ -98,5 +100,6 @@ class ScreenSaverSP(Widget):
   def _render(self, rect: rl.Rectangle):
     self.set_rect(rect)
     rl.clear_background(rl.BLACK)
-    rl.draw_text_ex(self.font, self.text, rl.Vector2(int(self.x), int(self.y)), self.font_size, 0, self.color)
+    for sweep in self._sweeps:
+      rl.draw_text_ex(self.font, self.text, rl.Vector2(int(sweep['x']), int(sweep['y'])), self.font_size, 0, sweep['color'])
     return -1
