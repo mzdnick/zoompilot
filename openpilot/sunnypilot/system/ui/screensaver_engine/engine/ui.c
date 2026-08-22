@@ -1,11 +1,48 @@
 #include "ui.h"
+#include "traffic.h"
 #include "util.h"
+#include <stdio.h>
+#include <stdlib.h>
 
 static Texture2D vign;
 static float intro = 0.0f;
 static int   showFps = 0;
 
-void ui_init(void){
+// trip odometer: meters driven, kept across runs in a plain text file.
+// UI state only - the seeded world is untouched.
+static double odoM = 0.0;
+static double odoSaved = 0.0;
+static float  odoLastS = -1.0f;
+static int    odoPersist = 0;
+
+static void odo_path(char *buf, int n){
+    const char *home = getenv("HOME");
+    snprintf(buf, n, "%s/.infinite-drive.odometer", home ? home : ".");
+}
+
+static void odo_load(void){
+    char path[512];
+    odo_path(path, sizeof(path));
+    FILE *f = fopen(path, "r");
+    if (!f) return;
+    double v = -1.0;
+    if (fscanf(f, "%lf", &v) == 1 && v >= 0.0 && v < 4.0e10) odoM = v;
+    fclose(f);
+}
+
+static void odo_save(void){
+    char path[512];
+    odo_path(path, sizeof(path));
+    FILE *f = fopen(path, "w");
+    if (!f) return;
+    fprintf(f, "%.1f\n", odoM);
+    fclose(f);
+    odoSaved = odoM;
+}
+
+void ui_init(int persist){
+    odoPersist = persist;
+    if (persist) odo_load();
     int w = 256, h = 144;
     Image img = GenImageColor(w, h, (Color){ 0, 0, 0, 0 });
     Color *px = (Color *)img.data;
@@ -24,7 +61,22 @@ void ui_init(void){
     UnloadImage(img);
 }
 
-void ui_update(float dt){ intro += dt; }
+void ui_shutdown(void){
+    if (odoPersist) odo_save();
+}
+
+void ui_update(float dt){
+    intro += dt;
+    float s = traffic_ego_s();
+    if (odoLastS < 0.0f) odoLastS = s;
+    float ds = s - odoLastS;
+    odoLastS = s;
+    if (ds > 0.0f && ds < 100.0f){
+        odoM += ds;
+        // autosave covers sessions that never reach a clean quit
+        if (odoPersist && odoM - odoSaved > 2000.0) odo_save();
+    }
+}
 
 void ui_fps_toggle(void){ showFps = !showFps; }
 
@@ -52,6 +104,21 @@ void ui_draw(int w, int h){
         Vector2 ss = MeasureTextEx(f, sub, ssz, 2);
         DrawTextEx(f, sub, (Vector2){ (float)w*0.5f - ss.x*0.5f, (float)h - 46.0f*sc }, ssz, 2,
                    col_a((Color){ 150, 160, 175, 255 }, ta*0.7f));
+    }
+
+    if (intro > 3.0f){
+        // the rounded km value changes rarely; cache text and measured width
+        static char txt[20];
+        static Vector2 ts = { 0, 0 };
+        static int lastKm = -1;
+        int km = (int)(odoM/1000.0 + 0.5);
+        if (km != lastKm){
+            lastKm = km;
+            snprintf(txt, sizeof(txt), "ODO %d km", km);
+            ts = MeasureTextEx(GetFontDefault(), txt, 12, 1);
+        }
+        DrawTextEx(GetFontDefault(), txt, (Vector2){ (float)w - ts.x - 20, (float)h - 30 }, 12, 1,
+                   col_a((Color){ 190, 215, 235, 255 }, 0.35f));
     }
 
     if (showFps) DrawFPS(8, 8);

@@ -83,6 +83,15 @@ void vehicle_draw(Vector3 pos, Vector3 fwd, Vector3 right, int type,
     float rearY  = (type == VT_TRUCK) ? 1.35f : 0.80f;
     float hx = w*0.5f - 0.30f;
     float hz = l*0.5f - 0.06f;
+    // lamp corner positions, computed once for blinkers and glows
+    Vector3 cfl = Vector3Add(pos, Vector3Add(Vector3Scale(right, hx),
+                          Vector3Add(Vector3Scale(up, frontY), Vector3Scale(fwd, hz))));
+    Vector3 cfr = Vector3Add(pos, Vector3Add(Vector3Scale(right, -hx),
+                          Vector3Add(Vector3Scale(up, frontY), Vector3Scale(fwd, hz))));
+    Vector3 crl = Vector3Add(pos, Vector3Add(Vector3Scale(right, hx*0.95f),
+                          Vector3Add(Vector3Scale(up, rearY), Vector3Scale(fwd, -hz))));
+    Vector3 crr = Vector3Add(pos, Vector3Add(Vector3Scale(right, -hx*0.95f),
+                          Vector3Add(Vector3Scale(up, rearY), Vector3Scale(fwd, -hz))));
     float headEmis = lights > 0.02f ? 1.0f : 0.12f;
     float tailEmis = brake > 0.5f ? 1.0f : lights*0.75f;
 
@@ -97,12 +106,8 @@ void vehicle_draw(Vector3 pos, Vector3 fwd, Vector3 right, int type,
         Color bc = { 255, 178, 48, 255 };
         box(pos, right, up, fwd, s*hx, frontY, hz, 0.10f, 0.07f, 0.03f, bc, 1.0f);
         box(pos, right, up, fwd, s*hx*0.95f, rearY, -hz, 0.11f, 0.07f, 0.03f, bc, 1.0f);
-        Vector3 fp = Vector3Add(pos, Vector3Add(Vector3Scale(right, s*hx),
-            Vector3Add(Vector3Scale(up, frontY), Vector3Scale(fwd, hz))));
-        Vector3 rp = Vector3Add(pos, Vector3Add(Vector3Scale(right, s*hx*0.95f),
-            Vector3Add(Vector3Scale(up, rearY), Vector3Scale(fwd, -hz))));
-        glow_add(fp, bc, 0.30f, 1.0f, 0.26f);
-        glow_add(rp, bc, 0.34f, 1.0f, 0.30f);
+        glow_add(s > 0 ? cfl : cfr, bc, 0.30f, 1.0f, 0.26f);
+        glow_add(s > 0 ? crl : crr, bc, 0.34f, 1.0f, 0.30f);
     }
     if (type == VT_TRUCK){
         // marker lights along the trailer top edge and rear corners
@@ -118,13 +123,22 @@ void vehicle_draw(Vector3 pos, Vector3 fwd, Vector3 right, int type,
         Color tg = { 255, 70, 50, 255 };
         float hsize = oncoming ? 0.85f : 0.36f;
         for (int s = -1; s <= 1; s += 2){
-            Vector3 hp = Vector3Add(pos,
-                Vector3Add(Vector3Scale(right, s*hx), Vector3Add(Vector3Scale(up, frontY), Vector3Scale(fwd, hz))));
+            Vector3 hp = (s > 0) ? cfl : cfr;
             glow_add(hp, hg, hsize, wet > 0.25f ? 2.6f : 1.0f, oncoming ? 0.34f : 0.16f);
-            Vector3 tp = Vector3Add(pos,
-                Vector3Add(Vector3Scale(right, s*hx*0.95f), Vector3Add(Vector3Scale(up, rearY), Vector3Scale(fwd, -hz))));
+            Vector3 tp = (s > 0) ? crl : crr;
             glow_add(tp, tg, brake > 0.5f ? 0.50f : 0.22f, wet > 0.25f ? 3.0f : 1.0f,
                      brake > 0.5f ? 0.30f : 0.15f);
+            // wet asphalt: streak the visible lamps onto the road surface.
+            // Same-direction cars show taillights; oncoming show headlight
+            // glare - one pair per vehicle keeps the additive pass cheap.
+            if (wet > 0.12f){
+                if (oncoming)
+                    refl_add((Vector3){ hp.x, pos.y + 0.06f, hp.z }, hg, hsize*1.15f, 3.4f, 0.19f);
+                else
+                    refl_add((Vector3){ tp.x, pos.y + 0.06f, tp.z }, tg,
+                             (brake > 0.5f ? 0.50f : 0.22f)*1.1f, 2.8f,
+                             (brake > 0.5f ? 0.30f : 0.15f)*0.55f);
+            }
         }
         if (!oncoming){
             Vector3 ap = Vector3Add(pos, Vector3Add(Vector3Scale(up, 0.06f), Vector3Scale(fwd, hz + 5.5f)));

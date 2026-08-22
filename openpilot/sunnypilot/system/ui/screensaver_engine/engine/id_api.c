@@ -7,6 +7,7 @@
 #include "world.h"
 #include "traffic.h"
 #include "environment.h"
+#include "events.h"
 #include "weather.h"
 #include "rendering.h"
 #include "ui.h"
@@ -22,7 +23,7 @@ void id_reset(uint64_t seed);
 void id_init(uint64_t seed){
     if (!inited){
         render_init();   // loads textures; must run once with a GL context
-        ui_init();
+        ui_init(1);      // device runs are real trips: persist the odometer
         inited = 1;
     }
     id_reset(seed);
@@ -33,9 +34,10 @@ void id_reset(uint64_t seed){
     camBob = 0.0f;
     env_init(seed, 480.0f, 0.93f);
     road_init(seed);
-    world_init(seed);
+    world_init();
     traffic_init(seed);
     weather_init(seed, -1);
+    events_init(seed);
 }
 
 void id_render(float dt){
@@ -44,6 +46,7 @@ void id_render(float dt){
     render_adas_time(simT);
     weather_update(dt);
     road_update(traffic_ego_s());
+    events_update(dt);   // reads zones ahead; spawns settle before traffic runs
     traffic_update(dt);
     world_update(traffic_ego_s());
     env_update(dt);

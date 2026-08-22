@@ -1,17 +1,20 @@
 #include "rendering.h"
 #include "rlgl.h"
 #include <stddef.h>
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
 #include "util.h"
 #include "environment.h"
 #include "weather.h"
 #include "road.h"
 #include "world.h"
 #include "traffic.h"
+#include "events.h"
 
 // -------- per-frame shading context --------
 static Vector3 shPos, shFwd, shRight, shUp;       // camera basis (glow billboards)
 static Vector3 shConeFwd, shConeRight;            // road basis (headlight cone)
-static Camera3D sCam3;
 
 // -------- glow / flatspot / sign queues --------
 typedef struct { Vector3 p; Color c; float size, ys, alpha; } Glow;
@@ -21,24 +24,34 @@ typedef struct { int atlas; Vector3 b, r, t, l; } SignQ;
 #define GLOW_MAX 320
 #define FLAT_MAX 160
 #define SIGN_MAX 64
+#define REFL_MAX 240
 
 static Glow  glows[GLOW_MAX];  static int nGlow;
 static Flat  flats[FLAT_MAX];   static int nFlat;
 static SignQ signs[SIGN_MAX];   static int nSign;
+static Glow  refls[REFL_MAX];  static int nRefl;
 
 static Texture2D whiteTex, glowTex, signAtlas;
-static const float SA_UV[SA_COUNT][4] = {
-    { 0.0f/1024.0f,   0.0f/256.0f, 340.0f/1024.0f, 122.0f/256.0f },
-    { 350.0f/1024.0f, 0.0f/256.0f, 300.0f/1024.0f, 104.0f/256.0f },
-    { 660.0f/1024.0f, 0.0f/256.0f, 118.0f/1024.0f, 118.0f/256.0f },
-    { 790.0f/1024.0f, 0.0f/256.0f, 118.0f/1024.0f, 118.0f/256.0f },
-    { 0.0f/1024.0f,   128.0f/256.0f, 500.0f/1024.0f, 120.0f/256.0f },
-    { 510.0f/1024.0f, 128.0f/256.0f, 500.0f/1024.0f, 120.0f/256.0f }
+// one table drives both the painted rects and the UV layout, so pixels and
+// UVs can never drift apart; bg.a == 0 means the panel paints no background
+static const struct { int x, y, w, h; Color bg; float emis; } SA_PANEL[SA_COUNT] = {
+    [SA_EXIT_BIG]   = {   0,   0, 340, 122, {  16,  96,  52, 255 }, 0.28f },
+    [SA_EXIT_SMALL] = { 350,   0, 300, 104, {  16,  96,  52, 255 }, 0.28f },
+    [SA_SPEED]      = { 660,   0, 118, 118, {   0,   0,   0,   0 }, 0.28f },
+    [SA_FUEL]       = { 790,   0, 118, 118, {  30,  70, 140, 255 }, 0.28f },
+    [SA_BILL1]      = {   0, 128, 500, 120, {  24,  26,  34, 255 }, 0.80f },
+    [SA_BILL2]      = { 510, 128, 500, 120, {  30,  24,  34, 255 }, 0.80f },
+    [SA_BILL3]      = {   0, 256, 500, 120, {  30,  32,  42, 255 }, 0.80f },
 };
+static float SA_UV[SA_COUNT][4];   // filled from SA_PANEL in render_init
 
 void glow_add(Vector3 p, Color c, float size, float yStretch, float alpha){
     if (nGlow >= GLOW_MAX) return;
     glows[nGlow++] = (Glow){ p, c, size, yStretch, alpha };
+}
+void refl_add(Vector3 surfaceP, Color c, float size, float yStretch, float alpha){
+    if (nRefl >= REFL_MAX) return;
+    refls[nRefl++] = (Glow){ surfaceP, c, size, yStretch, alpha };
 }
 void flatspot_add(Vector3 p, Vector3 right, Vector3 fwd, float hw, float hl, Color c, float alpha){
     if (nFlat >= FLAT_MAX) return;
@@ -51,7 +64,7 @@ void sign_add(int atlas, Vector3 bl, Vector3 br, Vector3 tr, Vector3 tl){
 
 // -------- lighting and fog --------
 
-Color shade_vert(Vector3 n, Vector3 wp, Color alb, float emis){
+static Color shade_vert(Vector3 n, Vector3 wp, Color alb, float emis){
     float ndl = Vector3DotProduct(n, envl.sunDir);
     if (ndl < 0.0f) ndl = 0.0f;
     float sr = (float)envl.ambient.r + (float)envl.sunCol.r*envl.sunI*ndl;
@@ -62,13 +75,18 @@ Color shade_vert(Vector3 n, Vector3 wp, Color alb, float emis){
     Vector3 d = Vector3Subtract(wp, shPos);
     float dist = Vector3Length(d);
     float ahead = Vector3DotProduct(d, shConeFwd);
-    if (envl.headlights > 0.02f && ahead > 1.0f && ahead < 150.0f){
+    if (envl.lightsOn > 0.02f && ahead < 150.0f){
         float latr = fabsf(Vector3DotProduct(d, shConeRight));
         if (latr < 12.0f){
+            // hold full strength at and behind the camera plane: a quad
+            // centroid crossing it mid-pass must keep its lit look until
+            // the face leaves the view - popping dark and fading both read
+            // wrong, so the cutoff only applies to genuinely lit distance
             float cone = 1.0f - ahead/150.0f;
+            if (cone > 1.0f) cone = 1.0f;
             cone *= cone;
             float side = 1.0f - latr/12.0f;
-            float hl = envl.headlights*cone*side*1.6f;
+            float hl = envl.lightsOn*cone*side*1.6f;
             sr += 255.0f*hl;
             sg += 237.0f*hl;
             sb += 199.0f*hl;
@@ -107,11 +125,31 @@ static void emit_tri(Vector3 a, Vector3 b, Vector3 c, Color col){
     rlVertex3f(c.x, c.y, c.z);
 }
 
+// two triangles over one texture rect; the shared emitter for every textured
+// pass so vertex order and color placement stay identical everywhere
+static void emit_tex6(Vector3 a, Vector3 b, Vector3 c, Vector3 d, Color col,
+                      float u0, float v0, float u1, float v1){
+    rlColor4ub(col.r, col.g, col.b, col.a);
+    rlTexCoord2f(u0, v1); rlVertex3f(a.x, a.y, a.z);
+    rlTexCoord2f(u1, v1); rlVertex3f(b.x, b.y, b.z);
+    rlTexCoord2f(u1, v0); rlVertex3f(c.x, c.y, c.z);
+    rlColor4ub(col.r, col.g, col.b, col.a);
+    rlTexCoord2f(u0, v1); rlVertex3f(a.x, a.y, a.z);
+    rlTexCoord2f(u1, v0); rlVertex3f(c.x, c.y, c.z);
+    rlTexCoord2f(u0, v0); rlVertex3f(d.x, d.y, d.z);
+}
+
+// quad normal and centroid, shared by the lit quad and the sign pass
+static void quad_frame(Vector3 a, Vector3 b, Vector3 c, Vector3 d, Vector3 *n, Vector3 *cen){
+    *n = Vector3CrossProduct(Vector3Subtract(b, a), Vector3Subtract(c, a));
+    float len = Vector3Length(*n);
+    if (len > 1e-6f) *n = Vector3Scale(*n, 1.0f/len);
+    *cen = Vector3Scale(Vector3Add(Vector3Add(a, b), Vector3Add(c, d)), 0.25f);
+}
+
 static void emit_quad_shaded(Vector3 a, Vector3 b, Vector3 c, Vector3 d, Color col, float emis){
-    Vector3 n = Vector3CrossProduct(Vector3Subtract(b, a), Vector3Subtract(c, a));
-    float len = Vector3Length(n);
-    if (len > 1e-6f) n = Vector3Scale(n, 1.0f/len);
-    Vector3 cen = Vector3Scale(Vector3Add(Vector3Add(a, b), Vector3Add(c, d)), 0.25f);
+    Vector3 n, cen;
+    quad_frame(a, b, c, d, &n, &cen);
     Color sc = shade_vert(n, cen, col, emis);
     emit_tri(a, b, c, sc);
     emit_tri(a, c, d, sc);
@@ -144,6 +182,7 @@ void geo_box(Vector3 c, Vector3 rx, Vector3 uy, Vector3 fz,
 }
 
 void geo_cylinder(Vector3 a, Vector3 b, float ra, float rb, int sides, Color col, float emis){
+    if (sides < 3 || sides > 15) return;
     Vector3 ax = Vector3Subtract(b, a);
     float len = Vector3Length(ax);
     if (len < 1e-6f) return;
@@ -151,33 +190,29 @@ void geo_cylinder(Vector3 a, Vector3 b, float ra, float rb, int sides, Color col
     Vector3 ref = fabsf(ax.y) < 0.9f ? (Vector3){ 0, 1, 0 } : (Vector3){ 1, 0, 0 };
     Vector3 u = Vector3Normalize(Vector3CrossProduct(ax, ref));
     Vector3 w = Vector3CrossProduct(ax, u);
-    Vector3 pa = a, pb = b;
-    for (int i = 1; i <= sides; i++){
-        float ang1 = 6.2832f*(float)(i - 1)/(float)sides;
-        float ang2 = 6.2832f*(float)i/(float)sides;
-        Vector3 d1 = Vector3Add(Vector3Scale(u, cosf(ang1)), Vector3Scale(w, sinf(ang1)));
-        Vector3 d2 = Vector3Add(Vector3Scale(u, cosf(ang2)), Vector3Scale(w, sinf(ang2)));
-        Vector3 qa = Vector3Add(a, Vector3Scale(d1, ra));
-        Vector3 qb = Vector3Add(a, Vector3Scale(d2, ra));
-        Vector3 vc = Vector3Add(b, Vector3Scale(d2, rb));
-        Vector3 vd = Vector3Add(b, Vector3Scale(d1, rb));
-        emit_quad_shaded(qa, qb, vc, vd, col, emis);
-        pa = qa; pb = qb;
+    // unit ring computed once; sides, caps, and cones all reuse it
+    Vector3 ring[16];
+    for (int j = 0; j <= sides; j++){
+        float ang = 6.2832f*(float)j/(float)sides;
+        ring[j] = Vector3Add(Vector3Scale(u, cosf(ang)), Vector3Scale(w, sinf(ang)));
     }
-    (void)pa; (void)pb;
+    for (int i = 1; i <= sides; i++){
+        Vector3 qa = Vector3Add(a, Vector3Scale(ring[i - 1], ra));
+        Vector3 qb = Vector3Add(a, Vector3Scale(ring[i], ra));
+        Vector3 vc = Vector3Add(b, Vector3Scale(ring[i], rb));
+        Vector3 vd = Vector3Add(b, Vector3Scale(ring[i - 1], rb));
+        emit_quad_shaded(qa, qb, vc, vd, col, emis);
+    }
     // cap both ends so cylinders never look hollow; wind outward to survive culling
     for (int end = 0; end < 2; end++){
         Vector3 cen = end ? b : a;
         float cr = end ? rb : ra;
         Vector3 n = end ? ax : Vector3Scale(ax, -1.0f);
         if (cr < 0.001f) continue;
+        Color cc = shade_vert(n, cen, col, emis);
         for (int i = 0; i < sides; i++){
-            float a1 = 6.2832f*(float)i/(float)sides, a2 = 6.2832f*(float)(i + 1)/(float)sides;
-            Vector3 d1 = Vector3Add(Vector3Scale(u, cosf(a1)), Vector3Scale(w, sinf(a1)));
-            Vector3 d2 = Vector3Add(Vector3Scale(u, cosf(a2)), Vector3Scale(w, sinf(a2)));
-            Color cc = shade_vert(n, cen, col, emis);
-            Vector3 p1 = Vector3Add(cen, Vector3Scale(d1, cr));
-            Vector3 p2 = Vector3Add(cen, Vector3Scale(d2, cr));
+            Vector3 p1 = Vector3Add(cen, Vector3Scale(ring[i], cr));
+            Vector3 p2 = Vector3Add(cen, Vector3Scale(ring[i + 1], cr));
             if (end) emit_tri(p1, p2, cen, cc);
             else     emit_tri(p2, p1, cen, cc);
         }
@@ -185,17 +220,21 @@ void geo_cylinder(Vector3 a, Vector3 b, float ra, float rb, int sides, Color col
 }
 
 void geo_cone(Vector3 base, Vector3 axis, float r, float h, int sides, Color col, float emis){
+    if (sides < 3 || sides > 15) return;
     Vector3 ax = Vector3Normalize(axis);
     Vector3 tip = Vector3Add(base, Vector3Scale(ax, h));
     Vector3 ref = fabsf(ax.y) < 0.9f ? (Vector3){ 0, 1, 0 } : (Vector3){ 1, 0, 0 };
     Vector3 u = Vector3Normalize(Vector3CrossProduct(ax, ref));
     Vector3 w = Vector3CrossProduct(ax, u);
+    Vector3 ring[16];
+    for (int j = 0; j <= sides; j++){
+        float ang = 6.2832f*(float)j/(float)sides;
+        ring[j] = Vector3Add(Vector3Scale(u, cosf(ang)), Vector3Scale(w, sinf(ang)));
+    }
     Vector3 prev = base;
     for (int i = 0; i <= sides; i++){
-        float ang = 6.2832f*(float)i/(float)sides;
-        Vector3 dir = Vector3Add(Vector3Scale(u, cosf(ang)), Vector3Scale(w, sinf(ang)));
-        Vector3 p = Vector3Add(base, Vector3Scale(dir, r));
-        if (i > 0) emit_tri(prev, p, tip, shade_vert(dir, p, col, emis));
+        Vector3 p = Vector3Add(base, Vector3Scale(ring[i], r));
+        if (i > 0) emit_tri(prev, p, tip, shade_vert(ring[i], p, col, emis));
         prev = p;
     }
 }
@@ -203,40 +242,50 @@ void geo_cone(Vector3 base, Vector3 axis, float r, float h, int sides, Color col
 // -------- textures built at init --------
 
 static void build_sign_atlas(void){
-    Image img = GenImageColor(1024, 256, (Color){ 0, 0, 0, 0 });
-    ImageDrawRectangle(&img, 0, 0, 340, 122, (Color){ 16, 96, 52, 255 });
+    Image img = GenImageColor(1024, 384, (Color){ 0, 0, 0, 0 });
+    for (int sa = 0; sa < SA_COUNT; sa++)
+        if (SA_PANEL[sa].bg.a > 0)
+            ImageDrawRectangle(&img, SA_PANEL[sa].x, SA_PANEL[sa].y, SA_PANEL[sa].w, SA_PANEL[sa].h, SA_PANEL[sa].bg);
+
     ImageDrawRectangleLines(&img, (Rectangle){ 4, 4, 332, 114 }, 4, WHITE);
     ImageDrawText(&img, "ZOOM CITY", 22, 16, 30, WHITE);
     ImageDrawText(&img, "24", 288, 16, 30, WHITE);
     ImageDrawText(&img, "Meridian", 22, 62, 26, WHITE);
     ImageDrawText(&img, "2", 296, 62, 26, WHITE);
 
-    ImageDrawRectangle(&img, 350, 0, 300, 104, (Color){ 16, 96, 52, 255 });
     ImageDrawRectangleLines(&img, (Rectangle){ 354, 4, 292, 96 }, 3, WHITE);
-    ImageDrawText(&img, "Meridian", 368, 12, 26, WHITE);
-    ImageDrawText(&img, "4", 606, 12, 26, WHITE);
-    ImageDrawText(&img, "EXIT 12", 368, 56, 26, WHITE);
+    ImageDrawText(&img, "Meridian", 368, 8, 26, WHITE);
+    ImageDrawText(&img, "4", 606, 8, 26, WHITE);
+    ImageDrawText(&img, "EXIT 12", 368, 44, 26, WHITE);
+    ImageDrawText(&img, "ZOOMPILOT HQ", 368, 76, 20, WHITE);
 
     ImageDrawCircle(&img, 719, 59, 56, WHITE);
     ImageDrawCircle(&img, 719, 59, 51, (Color){ 20, 20, 24, 255 });
     ImageDrawText(&img, "SPEED", 693, 28, 14, WHITE);
     ImageDrawText(&img, "65", 700, 44, 30, WHITE);
 
-    ImageDrawRectangle(&img, 790, 0, 118, 118, (Color){ 30, 70, 140, 255 });
     ImageDrawRectangleLines(&img, (Rectangle){ 794, 4, 110, 110 }, 3, WHITE);
     ImageDrawText(&img, "FUEL", 806, 40, 28, WHITE);
     ImageDrawText(&img, "1.89", 812, 74, 20, (Color){ 200, 220, 255, 255 });
 
-    ImageDrawRectangle(&img, 0, 128, 500, 120, (Color){ 24, 26, 34, 255 });
     ImageDrawCircle(&img, 70, 188, 34, (Color){ 255, 150, 60, 255 });
     ImageDrawRectangle(&img, 130, 172, 300, 8, (Color){ 120, 200, 255, 255 });
     ImageDrawText(&img, "O R B I T", 130, 190, 30, WHITE);
 
-    ImageDrawRectangle(&img, 510, 128, 500, 120, (Color){ 30, 24, 34, 255 });
     ImageDrawRectangle(&img, 540, 150, 8, 76, (Color){ 160, 120, 255, 255 });
     ImageDrawRectangle(&img, 560, 158, 6, 60, (Color){ 90, 200, 180, 255 });
     ImageDrawText(&img, "N O V A", 596, 176, 34, WHITE);
     ImageDrawText(&img, "drive calm", 596, 214, 16, (Color){ 180, 180, 190, 255 });
+
+    // ZoomPilot billboard: radar glyph, name, tagline
+    ImageDrawCircleLines(&img, 78, 316, 44, (Color){ 128, 138, 158, 255 });
+    ImageDrawCircleLines(&img, 78, 316, 28, (Color){ 160, 170, 190, 255 });
+    ImageDrawCircleLines(&img, 78, 316, 12, (Color){ 130, 215, 255, 255 });
+    ImageDrawCircle(&img, 78, 316, 4, (Color){ 255, 180, 90, 255 });
+    ImageDrawLine(&img, 78, 316, 118, 278, (Color){ 130, 215, 255, 255 });
+    ImageDrawCircle(&img, 120, 276, 5, (Color){ 140, 220, 255, 255 });
+    ImageDrawText(&img, "Z O O M P I L O T", 150, 288, 28, WHITE);
+    ImageDrawText(&img, "always driving", 150, 330, 16, (Color){ 205, 212, 224, 255 });
 
     signAtlas = LoadTextureFromImage(img);
     GenTextureMipmaps(&signAtlas);
@@ -245,6 +294,13 @@ static void build_sign_atlas(void){
 }
 
 void render_init(void){
+    for (int i = 0; i < SA_COUNT; i++){
+        SA_UV[i][0] = (float)SA_PANEL[i].x/1024.0f;
+        SA_UV[i][1] = (float)SA_PANEL[i].y/384.0f;
+        SA_UV[i][2] = (float)SA_PANEL[i].w/1024.0f;
+        SA_UV[i][3] = (float)SA_PANEL[i].h/384.0f;
+    }
+
     Image w = GenImageColor(1, 1, WHITE);
     whiteTex = LoadTextureFromImage(w);
     UnloadImage(w);
@@ -273,20 +329,23 @@ static void flush_signs(void){
         SignQ *s = &signs[i];
         const float *uv = SA_UV[s->atlas];
         float u0 = uv[0], v0 = uv[1], u1 = uv[0] + uv[2], v1 = uv[1] + uv[3];
-        Vector3 n = Vector3CrossProduct(Vector3Subtract(s->r, s->b), Vector3Subtract(s->t, s->b));
-        float len = Vector3Length(n);
-        if (len > 1e-6f) n = Vector3Scale(n, 1.0f/len);
-        Vector3 cen = Vector3Scale(Vector3Add(Vector3Add(s->b, s->r), Vector3Add(s->t, s->l)), 0.25f);
-        Color c = shade_vert(n, cen, (Color){ 255, 255, 255, 255 }, 0.28f);
-        rlColor4ub(c.r, c.g, c.b, c.a);
-        rlTexCoord2f(u0, v1); rlVertex3f(s->b.x, s->b.y, s->b.z);
-        rlTexCoord2f(u1, v1); rlVertex3f(s->r.x, s->r.y, s->r.z);
-        rlTexCoord2f(u1, v0); rlVertex3f(s->t.x, s->t.y, s->t.z);
-        rlColor4ub(c.r, c.g, c.b, c.a);
-        rlTexCoord2f(u0, v1); rlVertex3f(s->b.x, s->b.y, s->b.z);
-        rlTexCoord2f(u1, v0); rlVertex3f(s->t.x, s->t.y, s->t.z);
-        rlTexCoord2f(u0, v0); rlVertex3f(s->l.x, s->l.y, s->l.z);
+        Vector3 n, cen;
+        quad_frame(s->b, s->r, s->t, s->l, &n, &cen);
+        // billboards are backlit at night; road signs keep the dimmer tint
+        Color c = shade_vert(n, cen, (Color){ 255, 255, 255, 255 }, SA_PANEL[s->atlas].emis);
+        emit_tex6(s->b, s->r, s->t, s->l, c, u0, v0, u1, v1);
     }
+}
+
+// camera-facing additive quad for one glow entry
+static void draw_glow_billboard(const Glow *g, Color ca){
+    Vector3 r = Vector3Scale(shRight, g->size);
+    Vector3 u = Vector3Scale(shUp, g->size*g->ys);
+    Vector3 a = Vector3Add(Vector3Subtract(g->p, r), Vector3Negate(u));
+    Vector3 b = Vector3Add(Vector3Add(g->p, r), Vector3Negate(u));
+    Vector3 c = Vector3Add(Vector3Add(g->p, r), u);
+    Vector3 d = Vector3Add(Vector3Subtract(g->p, r), u);
+    emit_tex6(a, b, c, d, ca, 0.0f, 0.0f, 1.0f, 1.0f);
 }
 
 static void flush_glow_pass(void){
@@ -296,33 +355,22 @@ static void flush_glow_pass(void){
         Vector3 b = Vector3Add(f->p, Vector3Add(Vector3Scale(f->fwd, -f->hl), Vector3Scale(f->right,  f->hw)));
         Vector3 c = Vector3Add(f->p, Vector3Add(Vector3Scale(f->fwd,  f->hl), Vector3Scale(f->right,  f->hw)));
         Vector3 d = Vector3Add(f->p, Vector3Add(Vector3Scale(f->fwd,  f->hl), Vector3Scale(f->right, -f->hw)));
-        Color ca = col_a(f->c, f->alpha);
-        rlColor4ub(ca.r, ca.g, ca.b, ca.a);
-        rlTexCoord2f(0, 1); rlVertex3f(a.x, a.y, a.z);
-        rlTexCoord2f(1, 1); rlVertex3f(b.x, b.y, b.z);
-        rlTexCoord2f(1, 0); rlVertex3f(c.x, c.y, c.z);
-        rlColor4ub(ca.r, ca.g, ca.b, ca.a);
-        rlTexCoord2f(0, 1); rlVertex3f(a.x, a.y, a.z);
-        rlTexCoord2f(1, 0); rlVertex3f(c.x, c.y, c.z);
-        rlTexCoord2f(0, 0); rlVertex3f(d.x, d.y, d.z);
+        emit_tex6(a, b, c, d, col_a(f->c, f->alpha), 0.0f, 0.0f, 1.0f, 1.0f);
     }
-    for (int i = 0; i < nGlow; i++){
-        Glow *g = &glows[i];
-        Vector3 r = Vector3Scale(shRight, g->size);
-        Vector3 u = Vector3Scale(shUp, g->size*g->ys);
-        Vector3 a = Vector3Add(Vector3Subtract(g->p, r), Vector3Negate(u));
-        Vector3 b = Vector3Add(Vector3Add(g->p, r), Vector3Negate(u));
-        Vector3 c = Vector3Add(Vector3Add(g->p, r), u);
-        Vector3 d = Vector3Add(Vector3Subtract(g->p, r), u);
-        Color ca = col_a(g->c, g->alpha);
-        rlColor4ub(ca.r, ca.g, ca.b, ca.a);
-        rlTexCoord2f(0, 1); rlVertex3f(a.x, a.y, a.z);
-        rlTexCoord2f(1, 1); rlVertex3f(b.x, b.y, b.z);
-        rlTexCoord2f(1, 0); rlVertex3f(c.x, c.y, c.z);
-        rlColor4ub(ca.r, ca.g, ca.b, ca.a);
-        rlTexCoord2f(0, 1); rlVertex3f(a.x, a.y, a.z);
-        rlTexCoord2f(1, 0); rlVertex3f(c.x, c.y, c.z);
-        rlTexCoord2f(0, 0); rlVertex3f(d.x, d.y, d.z);
+    for (int i = 0; i < nGlow; i++)
+        draw_glow_billboard(&glows[i], col_a(glows[i].c, glows[i].alpha));
+    // wet-road reflections: vertical additive streaks on the asphalt. The
+    // entries sit just above the road plane, so the opaque road never
+    // depth-occludes them, and the whole pass is skipped on a dry road.
+    float wet = weather_wet();
+    if (wet > 0.12f){
+        for (int i = 0; i < nRefl; i++){
+            Glow *g = &refls[i];
+            float dist = Vector3Length(Vector3Subtract(g->p, shPos));
+            if (dist > 240.0f) continue;
+            float fall = 1.0f - 0.4f*clampf(dist/240.0f, 0.0f, 1.0f);
+            draw_glow_billboard(g, col_a(g->c, g->alpha*wet*fall));
+        }
     }
 }
 
@@ -341,7 +389,7 @@ static void draw_corner_ticks(Rectangle rec, float len, float thick, Color c){
         { rec.x, rec.y }, { rec.x + rec.width, rec.y },
         { rec.x, rec.y + rec.height }, { rec.x + rec.width, rec.y + rec.height }
     };
-    int dx[4] = { 1, -1, 1, -1 }, dy[4] = { 1, 1, -1, -1 };
+    static const int dx[4] = { 1, -1, 1, -1 }, dy[4] = { 1, 1, -1, -1 };
     for (int i = 0; i < 4; i++){
         Vector2 ex = { p[i].x + dx[i]*len, p[i].y };
         Vector2 ey = { p[i].x, p[i].y + dy[i]*len };
@@ -350,8 +398,7 @@ static void draw_corner_ticks(Rectangle rec, float len, float thick, Color c){
     }
 }
 
-static void adas_project(Camera3D cam, float sCam, float dt){
-    (void)cam; (void)sCam; (void)dt;
+static void adas_project(float dt){
     float ph = fmodf(adas.t, 28.0f);
     float onT = 0.0f;
     if (adas.t > 8.0f) onT = (ph < 16.0f) ? 1.0f : 0.0f;
@@ -381,8 +428,8 @@ static void adas_draw2d(Camera3D cam, float sCam){
     if (adas.a < 0.02f) return;
     float A = adas.a*adas.pulse;
 
-    Color cLane = { 110, 205, 255, 255 };
-    Color cBox  = { 140, 225, 255, 255 };
+    static const Color cLane = { 110, 205, 255, 255 };
+    static const Color cBox  = { 140, 225, 255, 255 };
 
     // lane edge dashes
     float egoLat = traffic_ego_lat();
@@ -455,12 +502,17 @@ static void adas_draw2d(Camera3D cam, float sCam){
         lpos = (Vector2){ (float)w*0.5f - 20, (float)h*0.42f };
     }
     if (label)
-        DrawTextEx(GetFontDefault(), label, lpos, 10, 2, col_a((Color){ 200, 235, 255, 255 }, A*0.55f));
+        DrawTextEx(f, label, lpos, 10, 2, col_a((Color){ 200, 235, 255, 255 }, A*0.55f));
 
-    // small autopilot readout
-    float mph = traffic_ego_v()*2.237f;
-    const char *auto1 = TextFormat("AUTO   %d MPH", (int)(mph + 0.5f));
-    DrawTextEx(f, auto1, (Vector2){ 20, (float)h - 30 }, 12, 1,
+    // small autopilot readout; the rounded MPH rarely changes at cruise
+    static char autoTxt[20];
+    static int autoMph = -1;
+    int mph = (int)(traffic_ego_v()*2.237f + 0.5f);
+    if (mph != autoMph){
+        autoMph = mph;
+        snprintf(autoTxt, sizeof(autoTxt), "AUTO   %d MPH", mph);
+    }
+    DrawTextEx(f, autoTxt, (Vector2){ 20, (float)h - 30 }, 12, 1,
                col_a((Color){ 190, 215, 235, 255 }, A*0.4f));
 }
 
@@ -480,7 +532,6 @@ static void draw_city_glow(Camera3D cam, Vector3 pos, float amt){
 }
 
 void render_frame(Camera3D cam, float sCam, float dt){
-    sCam3 = cam;
     Matrix m = GetCameraMatrix(cam);
     shPos   = cam.position;
     shRight = (Vector3){ m.m0, m.m4, m.m8 };
@@ -497,10 +548,10 @@ void render_frame(Camera3D cam, float sCam, float dt){
 
     Vector3 cityPos; float cityAmt;
     world_city_glow(sCam, &cityPos, &cityAmt);
-    env_draw_sky(cam);
+    env_draw_sky(cam, sCam, dt);
     draw_city_glow(cam, cityPos, cityAmt);
 
-    nGlow = nFlat = nSign = 0;
+    nGlow = nFlat = nSign = nRefl = 0;
 
     BeginMode3D(cam);
     // face windings are mixed (geo_box inside-out, cylinder sides outward),
@@ -516,6 +567,7 @@ void render_frame(Camera3D cam, float sCam, float dt){
     road_draw(sCam);
     world_draw(sCam);
     traffic_draw();
+    events_draw();
     rlEnd();
 
     if (nSign > 0){
@@ -533,7 +585,7 @@ void render_frame(Camera3D cam, float sCam, float dt){
     rlSetBlendMode(RL_BLEND_ALPHA);
     rlSetTexture(0);
 
-    adas_project(cam, sCam, dt);
+    adas_project(dt);
     EndMode3D();
 
     adas_draw2d(cam, sCam);

@@ -4,8 +4,8 @@
 
 typedef struct VehInfo {
     Vector3 pos, fwd, right;
-    float s, lat, v, len, w, h;
-    int dir, lane, type, braking;
+    float lat, len, w, h;
+    int dir;
     float detect;      // ADAS fade 0..1
     float distAhead;   // s - egoS
 } VehInfo;
@@ -20,3 +20,5 @@ int   traffic_ego_target_lane(void);
 int   traffic_ego_blinker(void);        // -1 left, +1 right, 0 centered
 void  traffic_draw(void);
 int   traffic_query(VehInfo *out, int max);
+int   traffic_spawn_group(int type, int n, float cruise, int lane, int dir,
+                          const Color *cols);   // scripted group for rare events

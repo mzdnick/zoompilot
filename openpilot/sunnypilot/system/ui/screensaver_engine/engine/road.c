@@ -6,8 +6,6 @@
 #include <string.h>
 #include <stdio.h>
 
-#define MASK (RING_SEGS - 1)
-
 typedef struct {
     int   type;
     float s0, s1;
@@ -35,9 +33,10 @@ static struct {
     int      firstZone;
 } R;
 
-static const float ZAMP [ZN_COUNT] = { 10.0f, 16.0f, 12.0f, 34.0f, 8.0f, 4.0f };
-static const float ZCURV[ZN_COUNT] = { 0.70f, 1.00f, 0.90f, 1.50f, 1.20f, 0.35f };
-static const float ZELEV[ZN_COUNT] = { 0.60f, 1.00f, 0.80f, 1.60f, 1.10f, 0.40f };
+static const float ZAMP [ZN_COUNT] = { 10.0f, 16.0f, 12.0f, 34.0f, 8.0f, 4.0f, 6.0f };
+static const float ZCURV[ZN_COUNT] = { 0.70f, 1.00f, 0.90f, 1.50f, 1.20f, 0.35f, 0.90f };
+static const float ZELEV[ZN_COUNT] = { 0.60f, 1.00f, 0.80f, 1.60f, 1.10f, 0.40f, 0.70f };
+static const float ZLAKE[ZN_COUNT] = { 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 1.0f };
 
 static Zone *zone_at(float s){
     for (int i = 0; i < R.zn; i++)
@@ -74,15 +73,16 @@ static void new_zone(float startS){
         int prevTwice = (R.zn > 0 && R.z[R.zn-1].type == R.prevType);
         for (int tries = 0; tries < 8; tries++){
             int x = rng_int(r, 100);
-            t = x < 22 ? ZN_PLAINS : x < 42 ? ZN_HILLS : x < 60 ? ZN_FOREST :
-                x < 76 ? ZN_MOUNTAIN : x < 86 ? ZN_CANYON : ZN_CITY;
+            t = x < 20 ? ZN_PLAINS : x < 38 ? ZN_HILLS : x < 54 ? ZN_FOREST :
+                x < 69 ? ZN_MOUNTAIN : x < 78 ? ZN_CANYON : x < 90 ? ZN_CITY : ZN_LAKESIDE;
             if (!prevTwice || t != R.prevType) break;
         }
     }
     R.firstZone = 0;
     z->type = t;
     static const float ZLEN[ZN_COUNT][2] = {
-        {1400, 2600}, {1200, 2400}, {1200, 2200}, {1400, 2600}, {900, 1700}, {1600, 3000}
+        {1400, 2600}, {1200, 2400}, {1200, 2200}, {1400, 2600}, {900, 1700}, {1600, 3000},
+        {1100, 2200}
     };
     z->s1 = z->s0 + rng_range(r, ZLEN[t][0], ZLEN[t][1]);
 
@@ -100,10 +100,11 @@ static void new_zone(float startS){
         float step = (z->s1 - z->s0 - 400.0f) / z->overN;
         for (int i = 0; i < z->overN; i++) z->overS[i] = z->s0 + 250.0f + step*i + rng_f(r)*120.0f;
     }
-    if ((t == ZN_PLAINS || t == ZN_CITY) && rng_chance(r, 30)){
-        float mid = z->s0 + 0.5f*(z->s1 - z->s0);
-        if (t == ZN_CITY || (R.zn == 0 ? 1 : R.z[R.zn-1].type != ZN_CITY) || true)
-            z->gasS = mid + rng_range(r, -200.0f, 200.0f);
+    if ((t == ZN_PLAINS || t == ZN_CITY || t == ZN_LAKESIDE) && rng_chance(r, 30)){
+        // skip when leaving a city into a non-city zone: those approaches
+        // already passed the last station
+        if (t == ZN_CITY || R.zn == 0 || R.z[R.zn-1].type != ZN_CITY)
+            z->gasS = z->s0 + 0.5f*(z->s1 - z->s0) + rng_range(r, -200.0f, 200.0f);
     }
     if (rng_chance(r, 8)){
         z->constrS   = z->s0 + rng_range(r, 0.15f, 0.75f)*(z->s1 - z->s0);
@@ -157,7 +158,7 @@ Seg *road_seg(int gi){
 int road_ring_head(void){ return R.head; }
 
 void road_debug_zones(void){
-    static const char *NAMES[ZN_COUNT] = { "plains", "hills", "forest", "mountain", "canyon", "city" };
+    static const char *NAMES[ZN_COUNT] = { "plains", "hills", "forest", "mountain", "canyon", "city", "lakeside" };
     for (int i = 0; i < R.zn; i++){
         Zone *z = &R.z[i];
         printf("zone %-9s %6.0f - %6.0f m", NAMES[z->type], z->s0, z->s1);
@@ -194,6 +195,7 @@ static void gen_one(void){
     g->right = rb;
     g->up    = Vector3Normalize(Vector3CrossProduct(rb, f));
     g->terraAmp = zone_scale(sm, ZAMP);
+    g->lakeW = zone_scale(sm, ZLAKE);
 
     Zone *z = zone_at(s);
     uint8_t fl = 0;
@@ -236,16 +238,24 @@ void road_update(float sCam){
     envIndoor += (tgt - envIndoor)*0.12f;
 }
 
-Vector3 road_point(float s, float lat, float h){
+// shared ring lookup: clamp s to the generated window and locate the bracket
+// segments; *pa is NULL only when the whole window is empty
+static void ring_at(float s, Seg **pa, Seg **pb, float *t){
     if (s < 0.0f) s = 0.0f;
     float maxS = (float)(R.head - 2)*SEG_LEN;
     if (s > maxS) s = maxS;
     int i = (int)floorf(s / SEG_LEN);
-    float t = s/SEG_LEN - (float)i;
+    *t = s/SEG_LEN - (float)i;
     Seg *A = road_seg(i), *B = road_seg(i + 1);
-    if (!A) A = road_seg(i + 1);
-    if (!A){ return (Vector3){ 0, 0, 0 }; }
-    if (!B) B = A;
+    if (!A) A = B;
+    *pa = A;
+    *pb = (A && !B) ? A : B;
+}
+
+Vector3 road_point(float s, float lat, float h){
+    Seg *A, *B; float t;
+    ring_at(s, &A, &B, &t);
+    if (!A) return (Vector3){ 0, 0, 0 };
     Vector3 p = Vector3Lerp(A->pos, B->pos, t);
     Vector3 r = Vector3Normalize(Vector3Lerp(A->right, B->right, t));
     Vector3 u = Vector3Normalize(Vector3Lerp(A->up, B->up, t));
@@ -253,19 +263,23 @@ Vector3 road_point(float s, float lat, float h){
 }
 
 void road_frame(float s, Vector3 *pos, Vector3 *fwd, Vector3 *right, Vector3 *up){
-    if (s < 0.0f) s = 0.0f;
-    float maxS = (float)(R.head - 2)*SEG_LEN;
-    if (s > maxS) s = maxS;
-    int i = (int)floorf(s / SEG_LEN);
-    float t = s/SEG_LEN - (float)i;
-    Seg *A = road_seg(i), *B = road_seg(i + 1);
-    if (!A) A = road_seg(i + 1);
+    Seg *A, *B; float t;
+    ring_at(s, &A, &B, &t);
     if (!A){ *pos = (Vector3){0,0,0}; *fwd = (Vector3){0,0,1}; *right = (Vector3){-1,0,0}; *up = (Vector3){0,1,0}; return; }
-    if (!B) B = A;
     *pos   = Vector3Lerp(A->pos, B->pos, t);
     *fwd   = Vector3Normalize(Vector3Lerp(A->fwd, B->fwd, t));
     *right = Vector3Normalize(Vector3Lerp(A->right, B->right, t));
     *up    = Vector3Normalize(Vector3Lerp(A->up, B->up, t));
+}
+
+void road_frame_at(float s, float lat, int dir,
+                   Vector3 *pos, Vector3 *fwd, Vector3 *right, Vector3 *up){
+    road_frame(s, pos, fwd, right, up);
+    *pos = Vector3Add(*pos, Vector3Scale(*right, lat));
+    if (dir < 0){
+        *fwd = Vector3Scale(*fwd, -1.0f);
+        *right = Vector3Scale(*right, -1.0f);
+    }
 }
 
 uint8_t road_flags_at(float s){
@@ -399,24 +413,15 @@ void road_draw(float sCam){
             }
         }
 
-        // tunnel portals
-        if (fl & SEG_TUNNEL){
+        // tunnel portals: one face wall wherever the tunnel flag changes state
+        {
             Seg *P = road_seg(i - 1);
-            if (P && !(P->flags & SEG_TUNNEL)){
+            if (P && ((fl ^ P->flags) & SEG_TUNNEL)){
                 Vector3 ax[3] = { A->right, A->up, A->fwd };
                 Color pc = { 128, 126, 120, 255 };
                 geo_box(xpt(A,  27.0f, 6.0f), ax[0], ax[1], ax[2], 18.0f, 7.0f, 1.1f, pc, 0.0f);
                 geo_box(xpt(A, -27.0f, 6.0f), ax[0], ax[1], ax[2], 18.0f, 7.0f, 1.1f, pc, 0.0f);
-                geo_box(xpt(A,  0.0f, 10.0f), ax[0], ax[1], ax[2], 45.0f, 3.2f, 1.1f, pc, 0.0f);
-            }
-        } else {
-            Seg *P = road_seg(i - 1);
-            if (P && (P->flags & SEG_TUNNEL)){
-                Vector3 ax[3] = { A->right, A->up, A->fwd };
-                Color pc = { 128, 126, 120, 255 };
-                geo_box(xpt(A,  27.0f, 6.0f), ax[0], ax[1], ax[2], 18.0f, 7.0f, 1.1f, pc, 0.0f);
-                geo_box(xpt(A, -27.0f, 6.0f), ax[0], ax[1], ax[2], 18.0f, 7.0f, 1.1f, pc, 0.0f);
-                geo_box(xpt(A,  0.0f, 10.0f), ax[0], ax[1], ax[2], 45.0f, 3.2f, 1.1f, pc, 0.0f);
+                geo_box(xpt(A,   0.0f, 10.0f), ax[0], ax[1], ax[2], 45.0f, 3.2f, 1.1f, pc, 0.0f);
             }
         }
 
@@ -456,8 +461,9 @@ void road_draw(float sCam){
                 Vector3 tl = Vector3Add(Vector3Add(c, Vector3Scale(A->right, -hw)), Vector3Scale(A->up, 2.0f*hh));
                 sign_add(SA_EXIT_SMALL,
                          Vector3Add(tl, Vector3Scale(A->up, -2.0f*hh)),
-                         Vector3Add(br, Vector3Scale(A->up, -2.0f*hh)),
-                         br, tl);
+                         br,
+                         Vector3Add(br, Vector3Scale(A->up, 2.0f*hh)),
+                         tl);
             }
         }
     }
