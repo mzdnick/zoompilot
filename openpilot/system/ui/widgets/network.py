@@ -1,6 +1,8 @@
 from enum import IntEnum
 from functools import partial
 from typing import Any, cast
+import json
+import time
 
 import pyray as rl
 from openpilot.system.ui.lib.application import gui_app
@@ -12,6 +14,7 @@ from openpilot.system.ui.widgets.button import ButtonStyle, Button
 from openpilot.system.ui.widgets.confirm_dialog import ConfirmDialog
 from openpilot.system.ui.widgets.keyboard import Keyboard
 from openpilot.system.ui.widgets.label import gui_label
+from openpilot.system.ui.widgets.portal_help_dialog import PortalHelpDialog
 from openpilot.system.ui.widgets.scroller_tici import Scroller
 from openpilot.system.ui.widgets.list_view import ButtonAction, ListItem, MultipleButtonAction, ToggleAction, button_item, text_item
 
@@ -36,6 +39,7 @@ MIN_PASSWORD_LENGTH = 8
 MAX_PASSWORD_LENGTH = 64
 ITEM_HEIGHT = 160
 ICON_SIZE = 50
+PORTAL_POLL_PERIOD = 1.0
 
 STRENGTH_ICONS = [
   "icons/wifi_strength_low.png",
@@ -297,6 +301,15 @@ class WifiManagerUI(Widget):
                                      networks_updated=self._on_network_updated,
                                      disconnected=self._on_disconnected)
 
+    self._params = None
+    try:
+      from openpilot.common.params import Params
+      self._params = Params()
+    except Exception:
+      pass
+    self._portal_state: dict = {}
+    self._last_portal_poll = 0.0
+
   def show_event(self):
     super().show_event()
     # start/stop scanning when widget is visible
@@ -312,6 +325,26 @@ class WifiManagerUI(Widget):
 
   def _update_state(self):
     self._wifi_manager.process_callbacks()
+    self._poll_portal_state()
+
+  def _poll_portal_state(self):
+    now = time.monotonic()
+    if self._params is None or now - self._last_portal_poll < PORTAL_POLL_PERIOD:
+      return
+    self._last_portal_poll = now
+    try:
+      raw = self._params.get("WifiPortalState")
+      self._portal_state = json.loads(raw) if raw else {}
+    except Exception:
+      self._portal_state = {}
+
+  @property
+  def _portal_active(self) -> bool:
+    connected = self._wifi_manager.connected_ssid
+    if self._portal_state.get("state") != "portal" or connected is None:
+      return False
+    ssid = self._portal_state.get("ssid", "")
+    return not ssid or ssid == connected
 
   def _render(self, rect: rl.Rectangle):
     if not self._networks:
@@ -380,6 +413,8 @@ class WifiManagerUI(Widget):
       if self._state_network.ssid == network.ssid:
         self._networks_buttons[network.ssid].set_enabled(False)
         status_text = tr("FORGETTING...")
+    elif self._portal_active and network.ssid == self._wifi_manager.connected_ssid:
+      status_text = tr("LOGIN REQUIRED")
     elif network.security_type == SecurityType.UNSUPPORTED:
       self._networks_buttons[network.ssid].set_enabled(False)
     else:
@@ -405,6 +440,9 @@ class WifiManagerUI(Widget):
     self._draw_signal_strength_icon(signal_icon_rect, network)
 
   def _networks_buttons_callback(self, network):
+    if self._portal_active and network.ssid == self._wifi_manager.connected_ssid:
+      gui_app.push_widget(PortalHelpDialog(dict(self._portal_state)))
+      return
     if not self._wifi_manager.is_connection_saved(network.ssid) and network.security_type != SecurityType.OPEN:
       self.state = UIState.NEEDS_AUTH
       self._state_network = network
