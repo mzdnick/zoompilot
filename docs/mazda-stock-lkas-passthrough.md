@@ -48,8 +48,8 @@ counter (continuing the camera's sequence at each engage edge) and the
 zero-angle pattern, adjusting the checksum by exactly the fields
 touched — a delta off the camera's own checksum, so bits outside the
 formula's model keep the camera's own contributions. Decode-and-re-encode
-cannot do any of this: the DBC describes 24 of 0x440's 64 bits and 43 of
-0x243's 64, and the packer zero-fills the rest. Device testing drove
+cannot do any of this: the DBC documents only 23 of 0x440's 64 bits and
+42 of 0x243's 64, and the packer zero-fills the undocumented rest. Device testing drove
 that home three times — a curated signal list flashed the wrong
 departure side (the dash picks the side from more than the
 `LDW_WARN_LL/RL` bits), the full decoded relay still produced an
