@@ -64,10 +64,20 @@ the camera obeys it.
 - No "front camera system malfunction" when the lane system activates,
   disengaged (watch the cruise-main-on moments in particular) or engaged.
 - Engage and disengage repeatedly, including at speed; watch for LKAS
-  faults around the handoffs (our 0x243 counter continues the camera's
-  sequence at each engage edge; at disengage the camera resumes its own
-  counter, so a jump remains on that edge — the EPS tolerance for it is
-  the main open risk).
+  faults around the handoffs. Counter semantics: while engaged our 0x243
+  advances once per controller frame at 100 Hz with no relation to the
+  camera's counter — that is the pre-branch behavior, proven by years of
+  upstream Mazda use and this car's own pre-branch driving, and while
+  engaged the camera's 0x243 is blocked, so no ECU can observe a
+  continuing relationship anyway (cross-checks against the still-forwarded
+  camera messages such as 0x242 are excluded by the same pre-branch
+  evidence). The engage-edge seed continues the camera's sequence but is
+  only ±1–2 counts exact: we cannot know which camera frame the panda
+  last forwarded at the flip instant, and frames parsed after the flip
+  never reached the car. That residual is still far milder than the
+  arbitrary phase jump the EPS tolerated pre-branch. At disengage the
+  camera resumes its own counter, so a jump remains on that edge — the
+  EPS tolerance for it is the main open risk.
 - Engaged: confirm orange lines appear on the correct side when crossing
   a line, same as disengaged. The curated relay flashed the wrong side
   and the full decoded relay still faulted (see above); the byte-exact
