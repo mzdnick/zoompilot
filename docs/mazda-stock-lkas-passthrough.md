@@ -47,7 +47,13 @@ camera's exact frame: openpilot writes only the torque field, the
 counter (continuing the camera's sequence at each engage edge) and the
 zero-angle pattern, adjusting the checksum by exactly the fields
 touched — a delta off the camera's own checksum, so bits outside the
-formula's model keep the camera's own contributions. Decode-and-re-encode
+formula's model keep the camera's own contributions. One camera bit is
+forced off rather than relayed: `LINE_NOT_VISIBLE`. The EPS gates
+steering torque on the camera's line-visibility state, so relaying it
+left openpilot able to steer only while the camera saw lanes (v4
+on-device); the curated build had always forced the bit off. LDW and the
+undocumented side bits still ride through, so the dash alerts stay
+correct on both sides. Decode-and-re-encode
 cannot do any of this: the DBC documents only 23 of 0x440's 64 bits and
 42 of 0x243's 64, and the packer zero-fills the undocumented rest. Device testing drove
 that home three times — a curated signal list flashed the wrong
@@ -86,10 +92,12 @@ the camera obeys it.
   camera resumes its own counter, so a jump remains on that edge — the
   EPS tolerance for it is the main open risk.
 - Engaged: confirm orange lines appear on the correct side when crossing
-  a line, same as disengaged. Curated, full-decoded and 0x440-byte-exact
-  cuts all got this wrong or faulted (see above); the 0x243 overlay is
-  the cut to retest. The relay fires on each new camera frame, so warn
+  a line, same as disengaged (verified on device 2026-08-22 with the
+  overlay). The relay fires on each new camera frame, so warn
   pulses are not clipped to the 2 Hz grid.
+- Engaged: openpilot must steer with or without camera lane lines —
+  the visibility bit stays off, so the EPS never sees the camera's
+  stand-by state while we command torque.
 - The "hold the wheel" nag is the camera's in both states now: it should
   appear with hands off, clear within a second or two of a firm grip,
   and stay silent while merely touching the wheel.
