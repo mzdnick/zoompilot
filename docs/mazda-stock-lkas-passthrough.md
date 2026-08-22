@@ -39,19 +39,26 @@ While engaged, openpilot relays the camera's `CAM_LANEINFO` frame byte
 for byte: `carstate` decodes the raw frame through two whole-frame
 signals (`FRAME_RAW_HI/LO`, added to the DBC for exactly this), and the
 controller re-sends those exact bytes on each new camera frame, at the
-camera's own cadence, masking only the three hands-warn bits and only
-while steering (not steering means the camera's own hands warning passes
-through). Decode-and-re-encode cannot do this: the DBC describes 24 of
-the frame's 64 bits and the packer zero-fills the rest. Device testing
-drove that home twice — a curated signal list flashed the wrong
+camera's own cadence. The camera's hands warning passes through
+untouched in both states — mapping openpilot's `steerRequired` events
+onto those bits painted an orange steering wheel for every wheel-touch
+and distraction alert. `CAM_LKAS` (0x243) is likewise an overlay on the
+camera's exact frame: openpilot writes only the torque field, the
+counter (continuing the camera's sequence at each engage edge) and the
+zero-angle pattern, adjusting the checksum by exactly the fields
+touched — a delta off the camera's own checksum, so bits outside the
+formula's model keep the camera's own contributions. Decode-and-re-encode
+cannot do any of this: the DBC describes 24 of 0x440's 64 bits and 43 of
+0x243's 64, and the packer zero-fills the rest. Device testing drove
+that home three times — a curated signal list flashed the wrong
 departure side (the dash picks the side from more than the
-`LDW_WARN_LL/RL` bits), and the full decoded relay still produced an
+`LDW_WARN_LL/RL` bits), the full decoded relay still produced an
 intermittent "front camera system malfunction" once the lane system went
-active: live defined bits riding on zeroed undefined bits, with byte 2
-entirely undefined and plausibly a counter. `CAM_LKAS` (0x243) carries
-the camera's `LDW`/`LINE_NOT_VISIBLE` bits engaged, and its counter
-continues the camera's sequence at each engage edge. A camera quiet past
-1 s holds the last frame at 2 Hz so the dash keeps its lane display. The
+active (live defined bits riding on zeroed undefined bits, byte 2 of
+0x440 entirely undefined and plausibly a counter), and the byte-exact
+0x440 alone still flashed the wrong side engaged, proving the dash reads
+departure-side bits from 0x243 as well. A camera quiet past 1 s holds
+the last 0x440 frame at 2 Hz so the dash keeps its lane display. The
 dash stays a live, camera-driven lane-departure display in both states.
 No toggle: the car's own lane-departure-alert setting governs, because
 the camera obeys it.
@@ -79,12 +86,13 @@ the camera obeys it.
   camera resumes its own counter, so a jump remains on that edge — the
   EPS tolerance for it is the main open risk.
 - Engaged: confirm orange lines appear on the correct side when crossing
-  a line, same as disengaged. The curated relay flashed the wrong side
-  and the full decoded relay still faulted (see above); the byte-exact
-  relay is the cut to retest. The relay now fires on each new camera
-  frame, so warn pulses are no longer clipped to the 2 Hz grid.
-- The "hold the wheel" nag while disengaged should behave stock: appear
-  with hands off, clear within a second or two of a firm grip.
+  a line, same as disengaged. Curated, full-decoded and 0x440-byte-exact
+  cuts all got this wrong or faulted (see above); the 0x243 overlay is
+  the cut to retest. The relay fires on each new camera frame, so warn
+  pulses are not clipped to the 2 Hz grid.
+- The "hold the wheel" nag is the camera's in both states now: it should
+  appear with hands off, clear within a second or two of a firm grip,
+  and stay silent while merely touching the wheel.
 - Steering-override disengage with ACC still on.
 - Alpha-long on and off (CX-5 2022).
 - Camera failure while disengaged now shows as a stock-like LKAS fault
