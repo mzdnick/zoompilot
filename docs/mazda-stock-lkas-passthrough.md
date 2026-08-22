@@ -35,33 +35,46 @@ test base parametrizes it as `DISENGAGED_IDLE_STEER_TX` (default True,
 same pattern as `NO_STEER_REQ_BIT`); the Mazda test class sets it
 False.
 
-While engaged, openpilot's 0x440 re-send relays the camera's whole
-decoded `CAM_LANEINFO` frame from `CS.cam_laneinfo`, overriding only the
-hands warnings, the way VW relays `LDW_SW_Warnung` through its
-replacement HUD message. The first cut relayed a curated signal list and
-device testing proved it wrong: a right-line departure flashed the left
-alert and a left-line departure showed nothing, because the dash picks
-the departure side from more than the `LDW_WARN_LL/RL` bits. The dash
-stays a live, camera-driven lane-departure display in both states,
-including the steering-override window with ACC on. No toggle: the car's
-own lane-departure-alert setting governs, because the camera obeys it.
+While engaged, openpilot relays the camera's `CAM_LANEINFO` frame byte
+for byte: `carstate` decodes the raw frame through two whole-frame
+signals (`FRAME_RAW_HI/LO`, added to the DBC for exactly this), and the
+controller re-sends those exact bytes on each new camera frame, at the
+camera's own cadence, masking only the three hands-warn bits and only
+while steering (not steering means the camera's own hands warning passes
+through). Decode-and-re-encode cannot do this: the DBC describes 24 of
+the frame's 64 bits and the packer zero-fills the rest. Device testing
+drove that home twice — a curated signal list flashed the wrong
+departure side (the dash picks the side from more than the
+`LDW_WARN_LL/RL` bits), and the full decoded relay still produced an
+intermittent "front camera system malfunction" once the lane system went
+active: live defined bits riding on zeroed undefined bits, with byte 2
+entirely undefined and plausibly a counter. `CAM_LKAS` (0x243) carries
+the camera's `LDW`/`LINE_NOT_VISIBLE` bits engaged, and its counter
+continues the camera's sequence at each engage edge. A camera quiet past
+1 s holds the last frame at 2 Hz so the dash keeps its lane display. The
+dash stays a live, camera-driven lane-departure display in both states.
+No toggle: the car's own lane-departure-alert setting governs, because
+the camera obeys it.
 
 ## Device validation checklist
 
 - Stock correction returns when disengaged (car settings: intervention
   ON).
 - Stock dash amber-line lane-departure warnings return.
+- No "front camera system malfunction" when the lane system activates,
+  disengaged (watch the cruise-main-on moments in particular) or engaged.
 - Engage and disengage repeatedly, including at speed; watch for LKAS
-  faults around the handoffs (our 0x243 counter restarts at `frame % 16`
-  while the camera's runs independently; a jump at each engage edge is
-  expected — the EPS tolerance for it is the main open risk).
-- Engaged: confirm orange lines appear on the correct side when crossing a
-  line. Device test 2026-08-21 with the curated signal list showed a
-  right-line departure flashing the left alert and a left-line departure
-  showing nothing; the full-frame relay (opendbc 3e73dfd1) is the fix to
-  retest. Flashes should look the same as disengaged. The camera natively
-  sends 0x440 at ~2 Hz (measured from route 9ff653756), so our 2 Hz
-  re-send is stock cadence; extra clipping beyond stock is not possible.
+  faults around the handoffs (our 0x243 counter continues the camera's
+  sequence at each engage edge; at disengage the camera resumes its own
+  counter, so a jump remains on that edge — the EPS tolerance for it is
+  the main open risk).
+- Engaged: confirm orange lines appear on the correct side when crossing
+  a line, same as disengaged. The curated relay flashed the wrong side
+  and the full decoded relay still faulted (see above); the byte-exact
+  relay is the cut to retest. The relay now fires on each new camera
+  frame, so warn pulses are no longer clipped to the 2 Hz grid.
+- The "hold the wheel" nag while disengaged should behave stock: appear
+  with hands off, clear within a second or two of a firm grip.
 - Steering-override disengage with ACC still on.
 - Alpha-long on and off (CX-5 2022).
 - Camera failure while disengaged now shows as a stock-like LKAS fault
