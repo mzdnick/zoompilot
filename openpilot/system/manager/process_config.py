@@ -155,7 +155,7 @@ procs = [
   PythonProcess("lateral_maneuversd", "openpilot.tools.lateral_maneuvers.lateral_maneuversd", lat_maneuver),
   PythonProcess("radard", "openpilot.selfdrive.controls.radard", only_onroad),
   PythonProcess("hardwared", "openpilot.system.hardware.hardwared", always_run),
-  PythonProcess("portal_helper", "openpilot.system.portal_helper.portal_helperd", always_run, enabled=not PC),
+  PythonProcess("portal_helper", "openpilot.system.portal_helper.portal_helperd", only_offroad, enabled=not PC),
   PythonProcess("modem", "openpilot.common.hardware.comma.modem", always_run, enabled=COMMA_HARDWARE),
   PythonProcess("tombstoned", "openpilot.system.tombstoned", always_run, enabled=not PC),
   PythonProcess("updated", "openpilot.system.updated.updated", only_offroad, enabled=not PC),

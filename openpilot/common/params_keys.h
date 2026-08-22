@@ -187,7 +187,7 @@ inline static std::unordered_map<std::string, ParamKeyAttributes> keys = {
     {"ShowTurnSignals", {PERSISTENT | BACKUP, BOOL, "0"}},
     {"StandstillTimer", {PERSISTENT | BACKUP, BOOL, "0"}},
     {"TrueVEgoUI", {PERSISTENT | BACKUP, BOOL, "0"}},
-    {"WifiPortalState", {CLEAR_ON_MANAGER_START, JSON}},
+    {"WifiPortalState", {CLEAR_ON_MANAGER_START | CLEAR_ON_ONROAD_TRANSITION, JSON}},
 
     // MADS params
     {"Mads", {PERSISTENT | BACKUP, BOOL, "1"}},
