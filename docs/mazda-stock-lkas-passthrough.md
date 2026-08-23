@@ -39,10 +39,15 @@ While engaged, openpilot relays the camera's `CAM_LANEINFO` frame byte
 for byte: `carstate` decodes the raw frame through two whole-frame
 signals (`FRAME_RAW_HI/LO`, added to the DBC for exactly this), and the
 controller re-sends those exact bytes on each new camera frame, at the
-camera's own cadence. The camera's hands warning passes through
-untouched in both states — mapping openpilot's `steerRequired` events
-onto those bits painted an orange steering wheel for every wheel-touch
-and distraction alert. `CAM_LKAS` (0x243) is likewise an overlay on the
+camera's own cadence. The three hands-warn bits are the one thing the
+relay overrides while openpilot steers: the camera's warning there
+tracks "LAS applying torque" rather than the driver, so relaying it lit
+the orange wheel nearly whenever lane lines were drawn. Engaged, the
+bits carry openpilot's hold-the-wheel alert instead — cleared when
+quiet, set when `steerRequired` is up (the turn-limit warning above
+all), which is the channel the stock setup always gave openpilot's
+alerts. While not steering, the camera's own warning passes through
+untouched. `CAM_LKAS` (0x243) is likewise an overlay on the
 camera's exact frame: openpilot writes only the torque field, the
 counter (continuing the camera's sequence at each engage edge) and the
 zero-angle pattern, adjusting the checksum by exactly the fields
@@ -98,9 +103,10 @@ the camera obeys it.
 - Engaged: openpilot must steer with or without camera lane lines —
   the visibility bit stays off, so the EPS never sees the camera's
   stand-by state while we command torque.
-- The "hold the wheel" nag is the camera's in both states now: it should
-  appear with hands off, clear within a second or two of a firm grip,
-  and stay silent while merely touching the wheel.
+- The "hold the wheel" nag: disengaged it is the camera's own (appear
+  with hands off, clear on grip); engaged it is openpilot's — quiet
+  while openpilot has no alert, and lit for the turn-limit
+  (steer-saturated) warning above all.
 - Steering-override disengage with ACC still on.
 - Alpha-long on and off (CX-5 2022).
 - Camera failure while disengaged now shows as a stock-like LKAS fault
