@@ -47,7 +47,13 @@ the camera's bits lit it nearly whenever lane lines were drawn (the
 DBC's `HANDS_*` names for them are misleading). Engaged, the bits carry
 openpilot's hold-the-wheel alert instead — cleared when quiet, set when
 `steerRequired` is up (the turn-limit warning above all), which is the
-channel the stock setup always gave openpilot's alerts. While not steering, the
+channel the stock setup always gave openpilot's alerts. And while
+openpilot steers quietly, the
+lane display is blanked (`LANE_LINES` = LKAS disabled); the frame goes
+out byte-exact during openpilot's own alerts so those keep the
+rendering the car already knows, lines and wheel together. The engaged
+amber departure warnings were traded away with this — the dash is
+openpilot's screen's business while it steers. While not steering, the
 camera's frame passes through untouched, flags-up windows included.
 `CAM_LKAS` (0x243) is likewise an overlay on the
 camera's exact frame: openpilot writes only the torque field, the
@@ -100,9 +106,10 @@ the camera obeys it.
 - Disengaged: orange lines appear on the correct side when crossing a
   line (verified on device 2026-08-22 with the overlay). The relay
   fires on each new camera frame.
-- Engaged, calm: no orange wheel; the camera's lane lines stay live.
-- Engaged, openpilot alert (turn limit, take control): the wheel appears
-  over the camera's live lines.
+- Engaged, calm: no lane lines on the dash or HUD, no orange wheel
+  (verified with the current build).
+- Engaged, openpilot alert (turn limit, take control): the wheel and
+  lines appear together.
 - Engaged: openpilot must steer with or without camera lane lines —
   the visibility bit stays off, so the EPS never sees the camera's
   stand-by state while we command torque.
