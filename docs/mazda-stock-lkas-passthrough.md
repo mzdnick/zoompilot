@@ -39,15 +39,21 @@ While engaged, openpilot relays the camera's `CAM_LANEINFO` frame byte
 for byte: `carstate` decodes the raw frame through two whole-frame
 signals (`FRAME_RAW_HI/LO`, added to the DBC for exactly this), and the
 controller re-sends those exact bytes on each new camera frame, at the
-camera's own cadence. The three hands-warn bits are the one thing the
-relay overrides while openpilot steers: the camera's warning there
-tracks "LAS applying torque" rather than the driver, so relaying it lit
-the orange wheel nearly whenever lane lines were drawn. Engaged, the
-bits carry openpilot's hold-the-wheel alert instead — cleared when
-quiet, set when `steerRequired` is up (the turn-limit warning above
-all), which is the channel the stock setup always gave openpilot's
-alerts. While not steering, the camera's own warning passes through
-untouched. `CAM_LKAS` (0x243) is likewise an overlay on the
+camera's own cadence. The three hands-warn bits and the lane display
+are the two things the relay overrides while openpilot steers: the
+camera's hands warning there tracks "LAS applying torque" rather than
+the driver, so relaying it lit the orange wheel nearly whenever lane
+lines were drawn. Engaged, the bits carry openpilot's hold-the-wheel
+alert instead — cleared when quiet, set when `steerRequired` is up (the
+turn-limit warning above all), which is the channel the stock setup
+always gave openpilot's alerts. And while openpilot steers quietly, the
+lane display is blanked (`LANE_LINES` = LKAS disabled); the frame goes
+out byte-exact during openpilot's own alerts so those keep the
+rendering the car already knows, lines and wheel together. The engaged
+amber departure warnings were traded away with this — the dash is
+openpilot's screen's business while it steers. While not steering, the
+camera's frame passes through untouched, flags-up windows included.
+`CAM_LKAS` (0x243) is likewise an overlay on the
 camera's exact frame: openpilot writes only the torque field, the
 counter (continuing the camera's sequence at each engage edge) and the
 zero-angle pattern, adjusting the checksum by exactly the fields
@@ -96,10 +102,15 @@ the camera obeys it.
   arbitrary phase jump the EPS tolerated pre-branch. At disengage the
   camera resumes its own counter, so a jump remains on that edge — the
   EPS tolerance for it is the main open risk.
-- Engaged: confirm orange lines appear on the correct side when crossing
-  a line, same as disengaged (verified on device 2026-08-22 with the
-  overlay). The relay fires on each new camera frame, so warn
-  pulses are not clipped to the 2 Hz grid.
+- Disengaged: orange lines appear on the correct side when crossing a
+  line (verified on device 2026-08-22 with the overlay). The relay
+  fires on each new camera frame, so warn pulses are not clipped to the
+  2 Hz grid.
+- Engaged, calm: no lane lines on the dash or HUD, no orange wheel. If
+  the quiet state renders oddly (a gray icon, residue), try
+  `LANE_LINES` = 1 ("no lines") instead of 0 — one-line change.
+- Engaged, openpilot alert (turn limit, take control): the wheel and
+  lines appear together.
 - Engaged: openpilot must steer with or without camera lane lines —
   the visibility bit stays off, so the EPS never sees the camera's
   stand-by state while we command torque.
