@@ -19,8 +19,8 @@ replaces those two channels only while openpilot is controlling:
   state, so the passthrough also works with ACC on but lateral
   disengaged.
 - While the camera's frames forward, the tx hook drops our own 0x243
-  and 0x440, so the two senders never share the bus. The car controller
-  is unchanged; the panda filters its frames.
+  and 0x440, so the two senders never share the bus. The disengaged
+  path needs no controller change; the panda filters its frames.
 
 The EPS sees one continuous sender per state, so bus handoffs happen
 only at engage and disengage. Disengaged behavior matches a stock car,
@@ -106,9 +106,8 @@ the camera obeys it.
   line (verified on device 2026-08-22 with the overlay). The relay
   fires on each new camera frame, so warn pulses are not clipped to the
   2 Hz grid.
-- Engaged, calm: no lane lines on the dash or HUD, no orange wheel. If
-  the quiet state renders oddly (a gray icon, residue), try
-  `LANE_LINES` = 1 ("no lines") instead of 0 — one-line change.
+- Engaged, calm: no lane lines on the dash or HUD, no orange wheel
+  (verified with the current build).
 - Engaged, openpilot alert (turn limit, take control): the wheel and
   lines appear together.
 - Engaged: openpilot must steer with or without camera lane lines —
