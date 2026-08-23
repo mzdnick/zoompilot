@@ -39,14 +39,16 @@ While engaged, openpilot relays the camera's `CAM_LANEINFO` frame byte
 for byte: `carstate` decodes the raw frame through two whole-frame
 signals (`FRAME_RAW_HI/LO`, added to the DBC for exactly this), and the
 controller re-sends those exact bytes on each new camera frame, at the
-camera's own cadence. The three hands-warn bits and the lane display
-are the two things the relay overrides while openpilot steers: the
-camera's hands warning there tracks "LAS applying torque" rather than
-the driver, so relaying it lit the orange wheel nearly whenever lane
-lines were drawn. Engaged, the bits carry openpilot's hold-the-wheel
-alert instead — cleared when quiet, set when `steerRequired` is up (the
-turn-limit warning above all), which is the channel the stock setup
-always gave openpilot's alerts. And while openpilot steers quietly, the
+camera's own cadence. The steering-assist indicator and the lane
+display are the two things the relay overrides while openpilot steers.
+The indicator is the orange steering wheel — in stock it lights while
+the LAS corrects back to the lane, the EPS applying torque, so relaying
+the camera's bits lit it nearly whenever lane lines were drawn (the
+DBC's `HANDS_*` names for them are misleading). Engaged, the bits carry
+openpilot's hold-the-wheel alert instead — cleared when quiet, set when
+`steerRequired` is up (the turn-limit warning above all), which is the
+channel the stock setup always gave openpilot's alerts. And while
+openpilot steers quietly, the
 lane display is blanked (`LANE_LINES` = LKAS disabled); the frame goes
 out byte-exact during openpilot's own alerts so those keep the
 rendering the car already knows, lines and wheel together. The engaged
@@ -113,10 +115,10 @@ the camera obeys it.
 - Engaged: openpilot must steer with or without camera lane lines —
   the visibility bit stays off, so the EPS never sees the camera's
   stand-by state while we command torque.
-- The "hold the wheel" nag: disengaged it is the camera's own (appear
-  with hands off, clear on grip); engaged it is openpilot's — quiet
-  while openpilot has no alert, and lit for the turn-limit
-  (steer-saturated) warning above all.
+- The orange steering wheel (steering-assist indicator): disengaged it
+  follows the stock system, lit while the LAS corrects; engaged it is
+  openpilot's — quiet while openpilot has no alert, and lit for the
+  turn-limit (steer-saturated) warning above all.
 - Steering-override disengage with ACC still on.
 - Alpha-long on and off (CX-5 2022).
 - Camera failure while disengaged now shows as a stock-like LKAS fault
