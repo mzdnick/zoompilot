@@ -49,7 +49,9 @@ openpilot's hold-the-wheel alert instead — cleared when quiet, set when
 `steerRequired` is up (the turn-limit warning above all), which is the
 channel the stock setup always gave openpilot's alerts. And while
 openpilot steers quietly, the
-lane display is blanked (`LANE_LINES` = LKAS disabled); the frame goes
+lane display is quieted to `LANE_LINES` = no lines — never LKAS disabled,
+which beside the always-live 0x243 is a state stock never sends and the dash
+flags as a front camera malfunction about 5 s in; the frame goes
 out byte-exact during openpilot's own alerts so those keep the
 rendering the car already knows, lines and wheel together. The engaged
 amber departure warnings were traded away with this — the dash is
