@@ -70,7 +70,8 @@ intermittent "front camera system malfunction" once the lane system went
 active (live defined bits riding on zeroed undefined bits, byte 2 of
 0x440 entirely undefined and plausibly a counter), and the byte-exact
 0x440 alone still flashed the wrong side engaged, proving the dash reads
-departure-side bits from 0x243 as well. The
+departure-side bits from 0x243 as well. A camera quiet past 1 s holds
+the last 0x440 frame at 2 Hz so the dash keeps its lane display. The
 dash stays a live, camera-driven lane-departure display in both states.
 No toggle: the car's own lane-departure-alert setting governs, because
 the camera obeys it.
@@ -99,7 +100,8 @@ the camera obeys it.
   EPS tolerance for it is the main open risk.
 - Disengaged: orange lines appear on the correct side when crossing a
   line (verified on device 2026-08-22 with the overlay). The relay
-  fires on each new camera frame.
+  fires on each new camera frame, so warn pulses are not clipped to the
+  2 Hz grid.
 - Engaged, calm: no orange wheel; the camera's lane lines stay live.
 - Engaged, openpilot alert (turn limit, take control): the wheel appears
   over the camera's live lines.
