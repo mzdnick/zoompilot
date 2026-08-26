@@ -10,8 +10,8 @@ Import('env')
 raylib_dir = Path(importlib.util.find_spec("raylib").submodule_search_locations[0]) / "install"
 
 engine_env = env.Clone()
-engine_env['CPPPATH'] += [str(raylib_dir / "include"), "screensaver_engine/engine"]
+engine_env['CPPPATH'] += [str(raylib_dir / "include"), "engine"]
 
-src = Glob("screensaver_engine/engine/*.c")
-screensaver_engine = engine_env.SharedLibrary("screensaver_engine/libinfinite_drive", src, LIBS=["m"])
+src = Glob("engine/*.c")
+screensaver_engine = engine_env.SharedLibrary("libinfinite_drive", src, LIBS=["m"])
 Export('screensaver_engine')
