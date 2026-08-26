@@ -287,3 +287,43 @@ Caveat: that car never left Park in the captured segment, so it is not proven th
 would have stayed latched once driving. Its other route (`00000008`, alpha long working)
 starts with BIT2 already clear and so does not test the cold-boot path. A cold-boot-then-drive
 log from that car would settle whether BIT2 clears on the shift to Drive.
+
+
+## 10. G46L radar dialect (2016.5 bodies, 2026-08-26)
+
+A 2016.5 KE body with the 2022 EPS swap ran alpha-long and lost lateral silently
+(`FaultyLong2016CX5.zst`). The teardown worked — the G46L accepted the UDS session and its
+CRZ_INFO/CRZ_CTRL/0x499 stopped together — but the camera went into a no-lines standby with
+no error bits set, and the EPS declined every torque command (`STEER_RATE` LKAS_EFFECTIVE 0,
+LKAS_BLOCK 1) while openpilot stayed green: full torque on the wire, no alerts, the lateral
+bar moving. Longitudinal was unaffected: the body executes the CRZ interface regardless of
+the camera. Only an ignition cycle recovered lateral; a C4 reboot did not — the latch is
+car-side.
+
+The G46L's own footprint (SweetLog captures, alpha-long off):
+
+- CRZ_INFO and CRZ_CTRL at 50 Hz — same addresses, same counter and checksum cadence, the
+  same checksum algorithm (verified on all 7160 captured frames).
+- A fully static 0x499 at 10 Hz: `00 98 40 00 00 00 00 00`. The 2022 template differs in
+  two of its eight bytes.
+- No track messages, ever.
+
+So the 2022 synthetics were a different radar talking to this camera: an identity frame that
+changed content and six track IDs the bus had never carried. A G46L body now replays the
+G46L dialect instead (`MazdaFlags.G46L_RADAR`, keyed on the radar firmware): the captured
+static 0x499, no track frames (the followed lead rides CRZ_CTRL alone), and CRZ_INFO pegged
+at +4.094 whenever it is not engaged, armed included. The engaged CRZ_INFO path and all of
+CRZ_CTRL were already byte-compatible with the captures. A G46L radar also corroborates
+alpha-long availability on its own; the engine gate still guards every other body.
+
+Device validation checklist (this failure's before/after metrics):
+
+- Camera 0x242 LINE1/LINE2 report real lane values, not mid-scale.
+- `STEER_RATE` LKAS_EFFECTIVE nonzero while steering, LKAS_BLOCK clear at speed.
+- No dash warnings; the 0x4d* background unchanged.
+- Stop, hold and resume through the protocol, across three ignition cycles.
+
+If the camera still stands by with the correct dialect, the next probe is the teardown gap:
+start the byte-identical 0x499 before SILENCING — static content, no counter, so the overlap
+with the live radar is harmless. Failing that, the body is unsupported and the corroboration
+gate is the guard.
