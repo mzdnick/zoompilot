@@ -540,8 +540,8 @@ void world_draw(float sCam){
             Color wood = { 92, 70, 50, 255 };
             Vector3 c0 = xpt(g, x->lat - 4.5f, -1.2f);
             geo_box(c0, ax[0], ax[1], ax[2], 4.6f, 0.07f, 0.85f, wood, 0.0f);
-            for (int k = 0; k < 2; k++){
-                float pl = x->lat + (k ? -8.6f : -0.4f);
+            for (int j = 0; j < 2; j++){
+                float pl = x->lat + (j ? -8.6f : -0.4f);
                 for (int z = -1; z <= 1; z += 2){
                     Vector3 b = Vector3Add(xpt(g, pl, -2.6f), Vector3Scale(g->fwd, 0.7f*z));
                     geo_cylinder(b, Vector3Add(b, (Vector3){ 0, 1.45f, 0 }), 0.07f, 0.07f, 4,
@@ -563,12 +563,12 @@ void world_draw(float sCam){
             Color white = { 226, 228, 230, 255 }, red = { 178, 62, 52, 255 };
             geo_cylinder(base, Vector3Add(base, (Vector3){ 0, 0.8f, 0 }),
                          3.4f, 2.8f, 8, (Color){ 70, 72, 70, 255 }, 0.0f);
-            for (int k = 0; k < 4; k++){
-                float y0 = 0.6f + (float)k*2.2f;
-                float r0 = 2.0f - 0.22f*(float)k;
+            for (int j = 0; j < 4; j++){
+                float y0 = 0.6f + (float)j*2.2f;
+                float r0 = 2.0f - 0.22f*(float)j;
                 geo_cylinder(Vector3Add(base, (Vector3){ 0, y0, 0 }),
                              Vector3Add(base, (Vector3){ 0, y0 + 2.2f, 0 }),
-                             r0, r0 - 0.22f, 8, (k & 1) ? red : white, 0.0f);
+                             r0, r0 - 0.22f, 8, (j & 1) ? red : white, 0.0f);
             }
             Vector3 top = Vector3Add(base, (Vector3){ 0, 9.4f, 0 });
             geo_cylinder(top, Vector3Add(top, (Vector3){ 0, 0.35f, 0 }),
@@ -580,10 +580,10 @@ void world_draw(float sCam){
             // the sweep runs on the sim clock, so --seek stays deterministic
             float ang = W.clock*1.05f + lat_f(x->seed)*6.2832f;
             Vector3 dir = { cosf(ang), -0.18f, sinf(ang) };
-            for (int k = 1; k <= 5; k++)
-                glow_add(Vector3Add(lp, Vector3Scale(dir, 10.0f*(float)k)),
-                         (Color){ 255, 240, 200, 255 }, 1.2f + 0.8f*(float)k, 0.6f,
-                         0.10f*(1.0f - 0.12f*(float)k));
+            for (int j = 1; j <= 5; j++)
+                glow_add(Vector3Add(lp, Vector3Scale(dir, 10.0f*(float)j)),
+                         (Color){ 255, 240, 200, 255 }, 1.2f + 0.8f*(float)j, 0.6f,
+                         0.10f*(1.0f - 0.12f*(float)j));
             break; }
         default: break;
         }
