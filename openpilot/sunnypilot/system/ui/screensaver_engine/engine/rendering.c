@@ -30,6 +30,8 @@ static Glow  glows[GLOW_MAX];  static int nGlow;
 static Flat  flats[FLAT_MAX];   static int nFlat;
 static SignQ signs[SIGN_MAX];   static int nSign;
 static Glow  refls[REFL_MAX];  static int nRefl;
+// queues drop silently at capacity by design; count the drops for --stats
+static int dropGlow, dropRefl, dropFlat, dropSign;
 
 static Texture2D whiteTex, glowTex, signAtlas;
 // one table drives both the painted rects and the UV layout, so pixels and
@@ -46,20 +48,31 @@ static const struct { int x, y, w, h; Color bg; float emis; } SA_PANEL[SA_COUNT]
 static float SA_UV[SA_COUNT][4];   // filled from SA_PANEL in render_init
 
 void glow_add(Vector3 p, Color c, float size, float yStretch, float alpha){
-    if (nGlow >= GLOW_MAX) return;
+    if (nGlow >= GLOW_MAX){ dropGlow++; return; }
     glows[nGlow++] = (Glow){ p, c, size, yStretch, alpha };
 }
 void refl_add(Vector3 surfaceP, Color c, float size, float yStretch, float alpha){
-    if (nRefl >= REFL_MAX) return;
+    if (nRefl >= REFL_MAX){ dropRefl++; return; }
     refls[nRefl++] = (Glow){ surfaceP, c, size, yStretch, alpha };
 }
 void flatspot_add(Vector3 p, Vector3 right, Vector3 fwd, float hw, float hl, Color c, float alpha){
-    if (nFlat >= FLAT_MAX) return;
+    if (nFlat >= FLAT_MAX){ dropFlat++; return; }
     flats[nFlat++] = (Flat){ p, right, fwd, hw, hl, c, alpha };
 }
 void sign_add(int atlas, Vector3 bl, Vector3 br, Vector3 tr, Vector3 tl){
-    if (nSign >= SIGN_MAX) return;
+    if (nSign >= SIGN_MAX){ dropSign++; return; }
     signs[nSign++] = (SignQ){ atlas, bl, br, tr, tl };
+}
+
+void render_drop_counts(int *glow, int *refl, int *flat, int *sign){
+    *glow = dropGlow; *refl = dropRefl; *flat = dropFlat; *sign = dropSign;
+}
+
+void sign_panel(Vector3 c, Vector3 right, Vector3 up, float hw, float ph, int atlas){
+    Vector3 bl = Vector3Add(c, Vector3Scale(right, -hw));
+    Vector3 br = Vector3Add(c, Vector3Scale(right, hw));
+    Vector3 tl = Vector3Add(bl, Vector3Scale(up, ph));
+    sign_add(atlas, bl, br, Vector3Add(br, Vector3Scale(up, ph)), tl);
 }
 
 // -------- lighting and fog --------
@@ -380,7 +393,7 @@ static struct { float a; float t; float pulse; } adas;
 
 void render_adas_time(float simTime){ adas.t = simTime; }
 
-static VehInfo  veh[32];
+static VehInfo  veh[NPC_MAX];   // sized for the whole NPC pool, no truncation
 static int      vehN;
 static int      leadIdx = -1;
 
@@ -403,10 +416,10 @@ static void adas_project(float dt){
     float onT = 0.0f;
     if (adas.t > 8.0f) onT = (ph < 16.0f) ? 1.0f : 0.0f;
     if (onT > adas.a && adas.t > 9.5f) adas.a = onT;              // snap on after startup
-    else adas.a += (onT - adas.a)*clampf(dt*1.4f, 0.0f, 1.0f);    // fade otherwise
+    else adas.a = approachf(adas.a, onT, dt*1.4f);                // fade otherwise
     adas.pulse = 0.88f + 0.12f*sinf(adas.t*3.1f);
 
-    vehN = traffic_query(veh, 32);
+    vehN = traffic_query(veh, NPC_MAX);
     leadIdx = -1;
     float best = 1e9f;
     float egoLaneLat = (traffic_ego_target_lane() == 1) ? LANE_SLOW : LANE_FAST;
@@ -532,11 +545,8 @@ static void draw_city_glow(Camera3D cam, Vector3 pos, float amt){
 }
 
 void render_frame(Camera3D cam, float sCam, float dt){
-    Matrix m = GetCameraMatrix(cam);
-    shPos   = cam.position;
-    shRight = (Vector3){ m.m0, m.m4, m.m8 };
-    shUp    = (Vector3){ m.m1, m.m5, m.m9 };
-    shFwd   = Vector3Scale((Vector3){ m.m2, m.m6, m.m10 }, -1.0f);
+    cam_basis(cam, &shRight, &shUp, &shFwd);
+    shPos = cam.position;
     {
         Vector3 p, f, r, u;
         road_frame(sCam, &p, &f, &r, &u);
@@ -589,5 +599,6 @@ void render_frame(Camera3D cam, float sCam, float dt){
     EndMode3D();
 
     adas_draw2d(cam, sCam);
-    weather_draw(cam);
+    weather_draw(cam, dt);
+    events_draw2d();
 }

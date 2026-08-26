@@ -16,6 +16,7 @@ typedef struct {
     int   overN;
     float gantryS;
     float constrS, constrLen;
+    float lhS;        // coastal lighthouse station
 } Zone;
 
 static struct {
@@ -33,15 +34,24 @@ static struct {
     int      firstZone;
 } R;
 
-static const float ZAMP [ZN_COUNT] = { 10.0f, 16.0f, 12.0f, 34.0f, 8.0f, 4.0f, 6.0f };
-static const float ZCURV[ZN_COUNT] = { 0.70f, 1.00f, 0.90f, 1.50f, 1.20f, 0.35f, 0.90f };
-static const float ZELEV[ZN_COUNT] = { 0.60f, 1.00f, 0.80f, 1.60f, 1.10f, 0.40f, 0.70f };
-static const float ZLAKE[ZN_COUNT] = { 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 1.0f };
+// chain-full and beyond-coverage zone queries, reported by --stats
+static int dropZone, zoneOverQ;
+
+static const float ZAMP [ZN_COUNT] = { 10.0f, 16.0f, 12.0f, 34.0f, 8.0f, 4.0f, 6.0f, 3.5f };
+static const float ZCURV[ZN_COUNT] = { 0.70f, 1.00f, 0.90f, 1.50f, 1.20f, 0.35f, 0.90f, 1.00f };
+static const float ZELEV[ZN_COUNT] = { 0.60f, 1.00f, 0.80f, 1.60f, 1.10f, 0.40f, 0.70f, 0.30f };
+static const float ZLAKE[ZN_COUNT] = { 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 1.0f, 1.0f };
 
 static Zone *zone_at(float s){
     for (int i = 0; i < R.zn; i++)
         if (s >= R.z[i].s0 && s < R.z[i].s1) return &R.z[i];
-    return R.zn ? &R.z[R.zn - 1] : NULL;
+    // past the chain the last zone's params apply by design; count how often
+    // so lookahead drift stays visible under --stats
+    if (R.zn){
+        if (s >= R.z[R.zn - 1].s1) zoneOverQ++;
+        return &R.z[R.zn - 1];
+    }
+    return NULL;
 }
 
 int road_zone_at(float s){
@@ -62,7 +72,7 @@ static float zone_scale(float s, const float *tab){
 }
 
 static void new_zone(float startS){
-    if (R.zn >= 16) return;
+    if (R.zn >= 16){ dropZone++; return; }
     Zone *z = &R.z[R.zn];
     memset(z, 0, sizeof(*z));
     z->s0 = startS;
@@ -73,8 +83,9 @@ static void new_zone(float startS){
         int prevTwice = (R.zn > 0 && R.z[R.zn-1].type == R.prevType);
         for (int tries = 0; tries < 8; tries++){
             int x = rng_int(r, 100);
-            t = x < 20 ? ZN_PLAINS : x < 38 ? ZN_HILLS : x < 54 ? ZN_FOREST :
-                x < 69 ? ZN_MOUNTAIN : x < 78 ? ZN_CANYON : x < 90 ? ZN_CITY : ZN_LAKESIDE;
+            t = x < 18 ? ZN_PLAINS : x < 35 ? ZN_HILLS : x < 50 ? ZN_FOREST :
+                x < 64 ? ZN_MOUNTAIN : x < 72 ? ZN_CANYON : x < 83 ? ZN_CITY :
+                x < 92 ? ZN_LAKESIDE : ZN_COASTAL;
             if (!prevTwice || t != R.prevType) break;
         }
     }
@@ -82,7 +93,7 @@ static void new_zone(float startS){
     z->type = t;
     static const float ZLEN[ZN_COUNT][2] = {
         {1400, 2600}, {1200, 2400}, {1200, 2200}, {1400, 2600}, {900, 1700}, {1600, 3000},
-        {1100, 2200}
+        {1100, 2200}, {1100, 2000}
     };
     z->s1 = z->s0 + rng_range(r, ZLEN[t][0], ZLEN[t][1]);
 
@@ -110,6 +121,10 @@ static void new_zone(float startS){
         z->constrS   = z->s0 + rng_range(r, 0.15f, 0.75f)*(z->s1 - z->s0);
         z->constrLen = rng_range(r, 160.0f, 260.0f);
     }
+    // the coastal lighthouse roll consumes draws only in coastal zones, so
+    // every other zone's seeded stream stays untouched
+    if (t == ZN_COASTAL && rng_chance(r, 55))
+        z->lhS = z->s0 + 0.35f*(z->s1 - z->s0) + rng_range(r, -150.0f, 150.0f);
     R.zn++;
 }
 
@@ -157,8 +172,13 @@ Seg *road_seg(int gi){
 
 int road_ring_head(void){ return R.head; }
 
+void road_zone_stats(int *capDrops, int *overQueries){
+    *capDrops = dropZone;
+    *overQueries = zoneOverQ;
+}
+
 void road_debug_zones(void){
-    static const char *NAMES[ZN_COUNT] = { "plains", "hills", "forest", "mountain", "canyon", "city", "lakeside" };
+    static const char *NAMES[ZN_COUNT] = { "plains", "hills", "forest", "mountain", "canyon", "city", "lakeside", "coastal" };
     for (int i = 0; i < R.zn; i++){
         Zone *z = &R.z[i];
         printf("zone %-9s %6.0f - %6.0f m", NAMES[z->type], z->s0, z->s1);
@@ -166,6 +186,7 @@ void road_debug_zones(void){
         if (z->bridgeLen > 0.0f) printf("  bridge %.0f+%.0f", z->bridgeS, z->bridgeLen);
         if (z->gasS > 0.0f)      printf("  gas %.0f", z->gasS);
         if (z->constrLen > 0.0f) printf("  constr %.0f+%.0f", z->constrS, z->constrLen);
+        if (z->lhS > 0.0f)       printf("  lighthouse %.0f", z->lhS);
         if (z->type == ZN_CITY)  printf("  gantry %.0f overpasses=%d", z->gantryS, z->overN);
         printf("\n");
     }
@@ -209,6 +230,7 @@ static void gen_one(void){
         for (int k = 0; k < z->overN; k++)
             if (s >= z->overS[k] - 6.0f && s < z->overS[k] + 6.0f) fl |= SEG_OVERPASS;
         if (z->gantryS > 0.0f && s >= z->gantryS - 8.0f && s < z->gantryS + 8.0f) fl |= SEG_GANTRY;
+        if (z->lhS > 0.0f && s >= z->lhS && s < z->lhS + 16.0f) fl |= SEG_LIGHTHOUSE;
     } else {
         g->zone = ZN_PLAINS;
     }
@@ -235,7 +257,7 @@ void road_update(float sCam){
     Seg *a = road_seg(camI + 2);
     if (a) f = a->flags;
     float tgt = (f & SEG_TUNNEL) ? 1.0f : 0.0f;
-    envIndoor += (tgt - envIndoor)*0.12f;
+    envIndoor = approachf(envIndoor, tgt, 0.12f);
 }
 
 // shared ring lookup: clamp s to the generated window and locate the bracket
@@ -290,16 +312,13 @@ uint8_t road_flags_at(float s){
 
 // ---------------- drawing ----------------
 
-static inline Vector3 xpt(Seg *g, float lat, float h){
-    return Vector3Add(g->pos, Vector3Add(Vector3Scale(g->right, lat), Vector3Scale(g->up, h)));
-}
-
-static const float PROWS[5] = {
+static const float PROWS[6] = {
     MEDIAN_HALF,
     MEDIAN_HALF + SHOULDER_L,
     MEDIAN_HALF + SHOULDER_L + LANE_W,
     MEDIAN_HALF + SHOULDER_L + 2.0f*LANE_W,
-    PAVE_OUT
+    PAVE_OUT,
+    TERRAIN_EDGE
 };
 
 static void pavement_quad(Seg *A, Seg *B, float l0, float l1, float h, Color c, float emis){
@@ -340,7 +359,10 @@ void road_draw(float sCam){
         pavement_quad(A, B, PROWS[1], PROWS[2], 0.0f, cA, 0.0f);
         pavement_quad(A, B, PROWS[2], PROWS[3], 0.0f, cA, 0.0f);
         pavement_quad(A, B, PROWS[3], PROWS[4], 0.0f, cR, 0.0f);
+        // verge fill out to the terrain edge; the guardrail stands on it
+        pavement_quad(A, B, PROWS[4], PROWS[5], 0.0f, cR, 0.0f);
         // oncoming side, mirrored
+        pavement_quad(A, B, -PROWS[5], -PROWS[4], 0.0f, cR, 0.0f);
         pavement_quad(A, B, -PROWS[4], -PROWS[3], 0.0f, cR, 0.0f);
         pavement_quad(A, B, -PROWS[3], -PROWS[2], 0.0f, cA, 0.0f);
         pavement_quad(A, B, -PROWS[2], -PROWS[1], 0.0f, cA, 0.0f);
@@ -455,15 +477,7 @@ void road_draw(float sCam){
                 geo_box(xpt(A,  15.8f, 3.4f), ax[0], ax[1], ax[2], 0.16f, 3.4f, 0.16f, gc, 0.0f);
                 geo_box(xpt(A, -15.8f, 3.4f), ax[0], ax[1], ax[2], 0.16f, 3.4f, 0.16f, gc, 0.0f);
                 geo_box(xpt(A,  0.0f, 6.55f), ax[0], ax[1], ax[2], 16.0f, 0.18f, 0.18f, gc, 0.0f);
-                float hw = 1.9f, hh = 0.75f, latc = 8.6f, hb = 5.35f;
-                Vector3 c = xpt(A, latc, hb);
-                Vector3 br = Vector3Add(c, Vector3Scale(A->right, hw));
-                Vector3 tl = Vector3Add(Vector3Add(c, Vector3Scale(A->right, -hw)), Vector3Scale(A->up, 2.0f*hh));
-                sign_add(SA_EXIT_SMALL,
-                         Vector3Add(tl, Vector3Scale(A->up, -2.0f*hh)),
-                         br,
-                         Vector3Add(br, Vector3Scale(A->up, 2.0f*hh)),
-                         tl);
+                sign_panel(xpt(A, 8.6f, 5.35f), A->right, A->up, 1.9f, 1.5f, SA_EXIT_SMALL);
             }
         }
     }

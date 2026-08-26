@@ -9,6 +9,28 @@ static const float DIMS[VT_COUNT][3] = {
     { 14.2f, 2.50f, 3.95f },   // truck
 };
 
+// sedan/suv/pickup share one shape recipe: painted slab, glass cabin, an
+// optional pickup bed wall, then wheels. The truck keeps its own case.
+typedef struct {
+    float bodyY, bodyCz, bodyHx, bodyHy, bodyHz;   // slab; lenMul overrides bodyHz when > 0
+    float lenMul;                                  // body half-length as a fraction of l
+    float glassY, glassCz, glassHx, glassHy, glassHz;
+    float bedY, bedCz, bedHx, bedHy, bedHz;        // bedHy <= 0: no bed wall
+    float wheelR, zA, zB;                          // two wheel axles
+} BodySpec;
+static const BodySpec BODY[VT_COUNT] = {
+    [VT_SEDAN]  = { .bodyY=0.55f, .bodyCz=0.00f, .bodyHx=0.92f, .bodyHy=0.31f, .lenMul=0.475f,
+                    .glassY=1.07f, .glassCz=-0.15f, .glassHx=0.79f, .glassHy=0.27f, .glassHz=1.32f,
+                    .bedHy=0.0f, .wheelR=0.33f, .zA=1.45f, .zB=-1.45f },
+    [VT_SUV]    = { .bodyY=0.66f, .bodyCz=0.00f, .bodyHx=0.95f, .bodyHy=0.36f, .lenMul=0.48f,
+                    .glassY=1.30f, .glassCz=-0.10f, .glassHx=0.86f, .glassHy=0.33f, .glassHz=1.40f,
+                    .bedHy=0.0f, .wheelR=0.37f, .zA=1.50f, .zB=-1.50f },
+    [VT_PICKUP] = { .bodyY=0.58f, .bodyCz=0.20f, .bodyHx=0.95f, .bodyHy=0.30f, .bodyHz=2.35f,
+                    .glassY=1.18f, .glassCz=-0.05f, .glassHx=0.85f, .glassHy=0.30f, .glassHz=0.85f,
+                    .bedY=1.02f, .bedCz=-1.55f, .bedHx=0.92f, .bedHy=0.16f, .bedHz=0.75f,
+                    .wheelR=0.38f, .zA=1.60f, .zB=-1.60f },
+};
+
 void vehicle_dims(int type, float *len, float *w, float *h){
     *len = DIMS[type][0]; *w = DIMS[type][1]; *h = DIMS[type][2];
 }
@@ -43,28 +65,17 @@ void vehicle_draw(Vector3 pos, Vector3 fwd, Vector3 right, int type,
     Vector3 up = Vector3Normalize(Vector3CrossProduct(right, fwd));
     Color glass = { 34, 42, 52, 255 };
 
-    switch (type){
-    case VT_SEDAN: {
-        float zs[2] = { 1.45f, -1.45f };
-        box(pos, right, up, fwd, 0, 0.55f, 0, 0.92f, 0.31f, l*0.475f, col, 0);
-        box(pos, right, up, fwd, 0, 1.07f, -0.15f, 0.79f, 0.27f, 1.32f, glass, 0);
-        wheels(pos, right, up, fwd, w, 0.33f, zs, 2);
-        break; }
-    case VT_SUV: {
-        float zs[2] = { 1.50f, -1.50f };
-        box(pos, right, up, fwd, 0, 0.66f, 0, 0.95f, 0.36f, l*0.48f, col, 0);
-        box(pos, right, up, fwd, 0, 1.30f, -0.10f, 0.86f, 0.33f, 1.40f, glass, 0);
-        wheels(pos, right, up, fwd, w, 0.37f, zs, 2);
-        break; }
-    case VT_PICKUP: {
-        float zs[2] = { 1.60f, -1.60f };
-        // low body slab, cab glass above the middle, bed walls behind
-        box(pos, right, up, fwd, 0, 0.58f, 0.20f, 0.95f, 0.30f, 2.35f, col, 0);
-        box(pos, right, up, fwd, 0, 1.18f, -0.05f, 0.85f, 0.30f, 0.85f, glass, 0);
-        box(pos, right, up, fwd, 0, 1.02f, -1.55f, 0.92f, 0.16f, 0.75f, col_scale(col, 0.85f), 0);
-        wheels(pos, right, up, fwd, w, 0.38f, zs, 2);
-        break; }
-    case VT_TRUCK: {
+    if (type != VT_TRUCK){
+        const BodySpec *b = &BODY[type];
+        float zs[2] = { b->zA, b->zB };
+        float bodyHz = b->lenMul > 0.0f ? b->lenMul*l : b->bodyHz;
+        box(pos, right, up, fwd, 0, b->bodyY, b->bodyCz, b->bodyHx, b->bodyHy, bodyHz, col, 0);
+        box(pos, right, up, fwd, 0, b->glassY, b->glassCz, b->glassHx, b->glassHy, b->glassHz, glass, 0);
+        if (b->bedHy > 0.0f)
+            box(pos, right, up, fwd, 0, b->bedY, b->bedCz, b->bedHx, b->bedHy, b->bedHz,
+                col_scale(col, 0.85f), 0);
+        wheels(pos, right, up, fwd, w, b->wheelR, zs, 2);
+    } else {
         float zs[4] = { 5.50f, 3.30f, -4.60f, -6.10f };
         // cab at the nose, thin windshield on its face, trailer with a gap;
         // trailer skirt reaches down over the wheels so they sit in wells
@@ -75,8 +86,6 @@ void vehicle_draw(Vector3 pos, Vector3 fwd, Vector3 right, int type,
         box(pos, right, up, fwd, 0, 3.14f, 5.30f, 0.85f, 0.16f, 1.05f, col_scale(col, 0.9f), 0);
         box(pos, right, up, fwd, 0, 2.35f, -1.55f, 1.22f, 1.60f, 5.50f, col2, 0);
         wheels(pos, right, up, fwd, w, 0.50f, zs, 4);
-        break; }
-    default: break;
     }
 
     float frontY = (type == VT_TRUCK) ? 1.10f : 0.75f;

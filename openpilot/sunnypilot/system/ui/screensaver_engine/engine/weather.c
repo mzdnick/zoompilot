@@ -103,9 +103,9 @@ void weather_update(float dt){
     W.dim    = par(3);
 
     float wetT = W.rain > 0.15f ? 1.0f : 0.0f;
-    W.wet += (wetT - W.wet)*clampf(dt/(wetT > W.wet ? 20.0f : 90.0f), 0.0f, 1.0f);
+    W.wet = approachf(W.wet, wetT, dt/(wetT > W.wet ? 20.0f : 90.0f));
     float gT = W.snow > 0.2f ? 1.0f : 0.0f;
-    W.ground += (gT - W.ground)*clampf(dt/(gT > W.ground ? 70.0f : 150.0f), 0.0f, 1.0f);
+    W.ground = approachf(W.ground, gT, dt/(gT > W.ground ? 70.0f : 150.0f));
 }
 
 float weather_fog_mul(void){ return W.fogMul; }
@@ -115,14 +115,7 @@ float weather_wet(void){ return W.wet; }
 float weather_ground_snow(void){ return W.ground; }
 float weather_dim(void){ return W.dim; }
 
-static void cam_basis(Camera3D cam, Vector3 *r, Vector3 *u, Vector3 *f){
-    Matrix m = GetCameraMatrix(cam);
-    *r = (Vector3){ m.m0, m.m4, m.m8 };
-    *u = (Vector3){ m.m1, m.m5, m.m9 };
-    *f = Vector3Scale((Vector3){ m.m2, m.m6, m.m10 }, -1.0f);
-}
-
-void weather_draw(Camera3D cam){
+void weather_draw(Camera3D cam, float dt){
     int w = GetScreenWidth(), h = GetScreenHeight();
 
     if (W.dim > 0.03f){
@@ -144,8 +137,8 @@ void weather_draw(Camera3D cam){
                 d->z = rng_range(&W.rng, 3.0f, 55.0f);
                 d->sp = rng_range(&W.rng, 0.8f, 1.3f);
             }
-            d->y -= 36.0f*d->sp*0.016f;
-            d->x += 1.2f*0.016f;
+            d->y -= 36.0f*d->sp*dt;
+            d->x += 1.2f*dt;
             if (d->x > 26.0f) d->x -= 52.0f;
             Vector3 p = Vector3Add(cam.position,
                 Vector3Add(Vector3Scale(cr, d->x), Vector3Add(Vector3Scale(cu, d->y), Vector3Scale(cf, d->z))));
@@ -168,7 +161,7 @@ void weather_draw(Camera3D cam){
                 d->z = rng_range(&W.rng, 2.0f, 45.0f);
                 d->sp = rng_range(&W.rng, 0.6f, 1.4f);
             }
-            d->y -= 1.9f*d->sp*0.016f;
+            d->y -= 1.9f*d->sp*dt;
             d->x += sinf((float)time*0.9f + (float)i*1.3f)*0.02f;
             if (d->x > 22.0f) d->x -= 44.0f;
             if (d->x < -22.0f) d->x += 44.0f;

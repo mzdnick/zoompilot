@@ -7,8 +7,6 @@
 #include "util.h"
 #include <string.h>
 
-#define NPC_MAX 56
-
 typedef struct {
     int   active, dir, lane, targetLane;
     float s, lat, v, cruise, latOff;
@@ -229,10 +227,10 @@ void traffic_update(float dt){
         T.waveTarget = rng_range(&T.rng, 0.75f, 1.55f);
         T.waveT = rng_range(&T.rng, 120.0f, 300.0f);
     }
-    T.wave += (T.waveTarget - T.wave)*clampf(dt/60.0f, 0.0f, 1.0f);
+    T.wave = approachf(T.wave, T.waveTarget, dt/60.0f);
 
     int zone = road_zone_at(T.s);
-    static const float ZDENS[ZN_COUNT] = { 14, 16, 16, 18, 15, 34, 16 };
+    static const float ZDENS[ZN_COUNT] = { 14, 16, 16, 18, 15, 34, 16, 18 };
     int target = (int)(ZDENS[zone]*T.wave);
     if (target > NPC_MAX) target = NPC_MAX;
 
@@ -288,7 +286,7 @@ void traffic_update(float dt){
         if (ok) T.targetLane = wantLane;
     }
     float latT = lane_lat(1, T.targetLane);
-    T.lat += (latT - T.lat)*clampf(dt*1.05f, 0.0f, 1.0f);
+    T.lat = approachf(T.lat, latT, dt*1.05f);
 
     // ---------- NPCs ----------
     int active = 0;
@@ -374,7 +372,7 @@ void traffic_update(float dt){
         if (n->dir > 0 && da > -12.0f && da < 175.0f) det = 1.0f;
         if (n->dir < 0 && da > -10.0f && da < 125.0f) det = 1.0f;
         float rate = det > n->detect ? 2.2f : 1.1f;
-        n->detect += (det - n->detect)*clampf(dt*rate, 0.0f, 1.0f);
+        n->detect = approachf(n->detect, det, dt*rate);
     }
 
     // top up if under target

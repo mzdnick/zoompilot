@@ -48,7 +48,7 @@ void id_render(float dt){
     road_update(traffic_ego_s());
     events_update(dt);   // reads zones ahead; spawns settle before traffic runs
     traffic_update(dt);
-    world_update(traffic_ego_s());
+    world_update(traffic_ego_s(), dt);
     env_update(dt);
     ui_update(dt);
 

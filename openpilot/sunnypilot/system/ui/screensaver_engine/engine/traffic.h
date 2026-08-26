@@ -2,6 +2,8 @@
 #include "raylib.h"
 #include <stdint.h>
 
+#define NPC_MAX 56
+
 typedef struct VehInfo {
     Vector3 pos, fwd, right;
     float lat, len, w, h;

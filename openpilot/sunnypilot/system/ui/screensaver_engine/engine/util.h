@@ -45,6 +45,19 @@ static inline float fbm1(float x, int oct){
 static inline float clampf(float v, float lo, float hi){ return v < lo ? lo : (v > hi ? hi : v); }
 static inline float lerpf(float a, float b, float t){ return a + (b - a)*t; }
 static inline float smooth01(float t){ t = clampf(t, 0.0f, 1.0f); return t*t*(3.0f - 2.0f*t); }
+// exponential approach shared by every ease/fade in the sim; k is the
+// per-call fraction of the remaining gap (already dt-scaled at call sites)
+static inline float approachf(float x, float tgt, float k){
+    return x + (tgt - x)*clampf(k, 0.0f, 1.0f);
+}
+
+// world-space camera basis columns from the view matrix
+static inline void cam_basis(Camera3D cam, Vector3 *r, Vector3 *u, Vector3 *f){
+    Matrix m = GetCameraMatrix(cam);
+    *r = (Vector3){ m.m0, m.m4, m.m8 };
+    *u = (Vector3){ m.m1, m.m5, m.m9 };
+    *f = Vector3Scale((Vector3){ m.m2, m.m6, m.m10 }, -1.0f);
+}
 
 static inline unsigned char cuc(int v){ return (unsigned char)(v < 0 ? 0 : (v > 255 ? 255 : v)); }
 static inline Color col_lerp(Color a, Color b, float t){

@@ -12,5 +12,5 @@ float weather_snow(void);
 float weather_wet(void);
 float weather_ground_snow(void);
 float weather_dim(void);
-void weather_draw(Camera3D cam);
+void weather_draw(Camera3D cam, float dt);
 const char *weather_name(void);

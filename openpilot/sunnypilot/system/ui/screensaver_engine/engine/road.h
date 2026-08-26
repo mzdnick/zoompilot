@@ -1,5 +1,6 @@
 #pragma once
 #include "raylib.h"
+#include "raymath.h"
 #include <stdint.h>
 
 #define SEG_LEN         4.0f
@@ -13,10 +14,14 @@
 #define SHOULDER_R  2.6f
 #define LANE_W      3.6f
 #define PAVE_OUT    (MEDIAN_HALF + SHOULDER_L + 2.0f*LANE_W + SHOULDER_R)   // 14.8
+// lateral start of the first terrain row (world.c TLAT[0]); drawn pavement
+// reaches this far so no see-through slot opens between road and landscape
+#define TERRAIN_EDGE 15.6f
 #define LANE_FAST   (MEDIAN_HALF + SHOULDER_L + LANE_W*0.5f)                 // 6.8
 #define LANE_SLOW   (MEDIAN_HALF + SHOULDER_L + LANE_W*1.5f)                 // 10.4
 
-enum { ZN_PLAINS, ZN_HILLS, ZN_FOREST, ZN_MOUNTAIN, ZN_CANYON, ZN_CITY, ZN_LAKESIDE, ZN_COUNT };
+enum { ZN_PLAINS, ZN_HILLS, ZN_FOREST, ZN_MOUNTAIN, ZN_CANYON, ZN_CITY, ZN_LAKESIDE,
+       ZN_COASTAL, ZN_COUNT };
 
 #define SEG_TUNNEL       0x01
 #define SEG_BRIDGE       0x02
@@ -25,6 +30,7 @@ enum { ZN_PLAINS, ZN_HILLS, ZN_FOREST, ZN_MOUNTAIN, ZN_CANYON, ZN_CITY, ZN_LAKES
 #define SEG_GAS          0x10
 #define SEG_OVERPASS     0x20
 #define SEG_GANTRY       0x40
+#define SEG_LIGHTHOUSE   0x80
 
 typedef struct Seg {
     Vector3  pos;      // median center, road elevation
@@ -52,4 +58,10 @@ float   road_curv_at(float s);
 uint8_t road_flags_at(float s);
 int     road_zone_at(float s);
 void    road_debug_zones(void);   // print zone layout to stdout
+void    road_zone_stats(int *capDrops, int *overQueries);   // for --stats
+
+// segment-local point: pos + right*lat + up*h (shared by road and world draw)
+static inline Vector3 xpt(Seg *g, float lat, float h){
+    return Vector3Add(g->pos, Vector3Add(Vector3Scale(g->right, lat), Vector3Scale(g->up, h)));
+}
 void    road_draw(float sCam);

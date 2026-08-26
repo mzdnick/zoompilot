@@ -9,20 +9,22 @@
 #define TROWS   10
 #define SCENY_MAX 720
 
-static const float TLAT[TROWS] = { 15.6f, 19.0f, 26.0f, 36.0f, 52.0f, 82.0f, 128.0f, 205.0f, 330.0f, 520.0f };
+static const float TLAT[TROWS] = { TERRAIN_EDGE, 19.0f, 26.0f, 36.0f, 52.0f, 82.0f, 128.0f, 205.0f, 330.0f, 520.0f };
 static const float TPROF[TROWS] = { 0.03f, 0.10f, 0.28f, 0.50f, 0.75f, 1.00f, 1.35f, 1.80f, 2.35f, 3.00f };
 static const float TTUN[TROWS]  = { 9.0f, 15.0f, 24.0f, 36.0f, 52.0f, 70.0f, 92.0f, 114.0f, 136.0f, 160.0f };
 static const float TCAN[TROWS]  = { -2.5f, -6.0f, -14.0f, -30.0f, -55.0f, -78.0f, -96.0f, -106.0f, -110.0f, -112.0f };
 static const float TLAK[TROWS]  = { -0.5f, -1.3f, -1.8f, -2.0f, -2.1f, -2.15f, -2.2f, -2.25f, -2.3f, -2.35f };
 
 enum { SC_PINE, SC_OAK, SC_BUSH, SC_ROCK, SC_POLE, SC_LAMP, SC_SIGN_DIR, SC_SIGN_SPEED,
-       SC_BILLBOARD, SC_BLD, SC_SHED, SC_CONE, SC_BARRIER, SC_GAS, SC_DOCK };
+       SC_BILLBOARD, SC_BLD, SC_SHED, SC_CONE, SC_BARRIER, SC_GAS, SC_DOCK, SC_LIGHTHOUSE };
 
 typedef struct {
     uint8_t  type;
     int32_t  seg;
     float    lat, scale, rot, h, w, d;
     uint32_t seed;
+    // baked lit-window grid (max 14 rows x 9 cols), filled by scen_push_bld
+    uint8_t  winOn[16], winWarm[16];
 } Scen;
 
 static struct {
@@ -33,6 +35,8 @@ static struct {
     float    cityS[4][2];   // city ranges [s0,s1] for skyline glow
     int      cityN;
     int      winBudget;
+    int      dropScen;      // scenery pool-full drops, for --stats
+    float    clock;         // sim-time clock for animated scenery (lighthouse sweep)
 } W;
 
 // -------- terrain heights per new segment --------
@@ -72,18 +76,36 @@ static void terrain_new(int i, Seg *g){
 // -------- scenery spawn per new segment --------
 
 static void scen_push(uint8_t type, int seg, float lat, float scale, float rot, uint32_t seed){
-    if (W.scN >= SCENY_MAX) return;
+    if (W.scN >= SCENY_MAX){ W.dropScen++; return; }
     Scen *x = &W.sc[W.scN++];
     x->type = type; x->seg = seg; x->lat = lat; x->scale = scale; x->rot = rot;
     x->h = 0.0f; x->w = 0.0f; x->d = 0.0f; x->seed = seed;
 }
 
+// fixed-size furniture: unit scale, no rotation
+static void scen_item(uint8_t type, int seg, float lat, uint32_t seed){
+    scen_push(type, seg, lat, 1.0f, 0.0f, seed);
+}
+
 // buildings are the only item with custom dimensions
 static void scen_push_bld(int seg, float lat, float rot, float h, float w, float d, uint32_t seed){
-    if (W.scN >= SCENY_MAX) return;
+    if (W.scN >= SCENY_MAX){ W.dropScen++; return; }
     Scen *x = &W.sc[W.scN++];
     x->type = SC_BLD; x->seg = seg; x->lat = lat; x->scale = 1.0f; x->rot = rot;
     x->h = h; x->w = w; x->d = d; x->seed = seed;
+    // bake the lit-window pattern at spawn: same hash per cell as before,
+    // just computed once instead of per window per frame
+    memset(x->winOn, 0, sizeof(x->winOn));
+    memset(x->winWarm, 0, sizeof(x->winWarm));
+    for (int wr = 0; wr < 14; wr++){
+        for (int wc = 0; wc < 9; wc++){
+            uint32_t hsh = hash_u32(seed + (uint32_t)wr*31u + (uint32_t)wc*7u);
+            if ((hsh & 3) >= 2) continue;
+            int idx = wr*9 + wc;
+            x->winOn[idx >> 3] |= (uint8_t)(1u << (idx & 7));
+            if (hsh & 8) x->winWarm[idx >> 3] |= (uint8_t)(1u << (idx & 7));
+        }
+    }
 }
 
 // side-of-road coin flip. Polarity is load-bearing for the seeded stream:
@@ -98,13 +120,16 @@ static void scenery_new(int i, Seg *g){
     int zt = g->zone;
     uint8_t fl = g->flags;
 
+    if (fl & SEG_LIGHTHOUSE)
+        scen_item(SC_LIGHTHOUSE, i, -19.0f, g->seed ^ 0x51EAu);   // out on the water side
+
     if (fl & SEG_GAS){
-        scen_push(SC_GAS, i, 27.0f, 1.0f, 0.0f, g->seed);
+        scen_item(SC_GAS, i, 27.0f, g->seed);
         return;   // keep the station area clear
     }
     if (fl & SEG_CONSTRUCTION){
-        if ((i % 3) == 0) scen_push(SC_CONE, i, 14.3f, 1.0f, 0.0f, g->seed ^ 0xC0);
-        if ((i % 2) == 0) scen_push(SC_BARRIER, i, 13.1f, 1.0f, 0.0f, g->seed ^ 0xBA);
+        if ((i % 3) == 0) scen_item(SC_CONE, i, 14.3f, g->seed ^ 0xC0);
+        if ((i % 2) == 0) scen_item(SC_BARRIER, i, 13.1f, g->seed ^ 0xBA);
         return;
     }
 
@@ -119,9 +144,9 @@ static void scenery_new(int i, Seg *g){
             }
         }
         if ((i % 10) == 0)
-            scen_push(SC_LAMP, i, ((i % 20) == 0) ? 15.8f : -15.8f, 1.0f, 0.0f, g->seed ^ 0x1A);
+            scen_item(SC_LAMP, i, ((i % 20) == 0) ? 15.8f : -15.8f, g->seed ^ 0x1A);
         if (rng_chance(&r, 2))
-            scen_push(SC_BILLBOARD, i, rng_lat(&r, 24.0f, 34.0f), 1.0f, 0.0f, rng_u64(&r));
+            scen_item(SC_BILLBOARD, i, rng_lat(&r, 24.0f, 34.0f), rng_u64(&r));
         return;
     }
 
@@ -134,13 +159,15 @@ static void scenery_new(int i, Seg *g){
         case ZN_MOUNTAIN:trees = rng_int(&r, 3); rocks = 1 + rng_int(&r, 3); break;
         case ZN_CANYON:  rocks = rng_int(&r, 2); trees = rng_int(&r, 2); break;
         case ZN_LAKESIDE:trees = 1 + rng_int(&r, 2); rocks = rng_int(&r, 2); break;
+        case ZN_COASTAL: trees = rng_int(&r, 2); rocks = rng_int(&r, 3); break;
         default: break;
     }
     float latMin = (zt == ZN_FOREST) ? 16.5f : 19.0f;
     float latMax = (zt == ZN_FOREST) ? 80.0f : 120.0f;
     for (int k = 0; k < trees; k++){
-        // lakeside keeps the water side clear: trees grow on the land side only
-        int side = (zt == ZN_LAKESIDE) ? 0 : (rng_chance(&r, 50) ? 0 : 1);
+        // zones with water on the left keep that side clear: trees grow on
+        // the land side only
+        int side = (zt == ZN_LAKESIDE || zt == ZN_COASTAL) ? 0 : (rng_chance(&r, 50) ? 0 : 1);
         float lat = (side ? -1.0f : 1.0f)*rng_range(&r, latMin, latMax);
         int oak = rng_chance(&r, 40);
         // trees never rotate, so no rotation is drawn (rot stays building-only)
@@ -151,30 +178,35 @@ static void scenery_new(int i, Seg *g){
         scen_push(SC_ROCK, i, (side ? -1.0f : 1.0f)*rng_range(&r, 16.0f, 140.0f),
                   rng_range(&r, 0.5f, 2.2f), 0.0f, rng_u64(&r));
     }
-    if (rng_chance(&r, 30))
+    if (zt == ZN_COASTAL){
+        // dune grass stays on the land side
+        if (rng_chance(&r, 30))
+            scen_push(SC_BUSH, i, rng_range(&r, 16.0f, 50.0f), rng_range(&r, 0.5f, 1.0f), 0.0f, rng_u64(&r));
+    } else if (rng_chance(&r, 30))
         scen_push(SC_BUSH, i, -rng_lat(&r, 15.5f, 40.0f), rng_range(&r, 0.7f, 1.3f), 0.0f, rng_u64(&r));
     // reeds on the lakeside shore, a plank dock every so often
     if (zt == ZN_LAKESIDE && rng_chance(&r, 40))
         scen_push(SC_BUSH, i, -rng_range(&r, 16.0f, 20.0f), rng_range(&r, 0.8f, 1.4f), 0.0f, rng_u64(&r));
     if (zt == ZN_LAKESIDE && (i % 15) == 7)
-        scen_push(SC_DOCK, i, -17.5f, 1.0f, 0.0f, g->seed ^ 0xD0Cu);
+        scen_item(SC_DOCK, i, -17.5f, g->seed ^ 0xD0Cu);
     if ((i % 10) == 5)
-        scen_push(SC_POLE, i, ((i / 10) & 1) ? 17.6f : -17.6f, 1.0f, 0.0f, g->seed ^ 0x90);
+        scen_item(SC_POLE, i, ((i / 10) & 1) ? 17.6f : -17.6f, g->seed ^ 0x90);
     if (rng_chance(&r, 3))
-        scen_push(SC_SIGN_DIR, i, (rng_chance(&r, 50) ? 16.8f : -16.8f), 1.0f, 0.0f, rng_u64(&r));
+        scen_item(SC_SIGN_DIR, i, (rng_chance(&r, 50) ? 16.8f : -16.8f), rng_u64(&r));
     else if (rng_chance(&r, 1))
-        scen_push(SC_SIGN_SPEED, i, 16.8f, 1.0f, 0.0f, rng_u64(&r));
+        scen_item(SC_SIGN_SPEED, i, 16.8f, rng_u64(&r));
     if (rng_chance(&r, 1) && (zt == ZN_PLAINS || zt == ZN_HILLS))
-        scen_push(SC_BILLBOARD, i, rng_lat(&r, 26.0f, 40.0f), 1.0f, 0.0f, rng_u64(&r));
+        scen_item(SC_BILLBOARD, i, rng_lat(&r, 26.0f, 40.0f), rng_u64(&r));
     if (rng_chance(&r, 2) && zt == ZN_PLAINS)
-        scen_push(SC_SHED, i, rng_lat(&r, 30.0f, 60.0f), 1.0f, 0.0f, rng_u64(&r));
+        scen_item(SC_SHED, i, rng_lat(&r, 30.0f, 60.0f), rng_u64(&r));
 }
 
 void world_init(void){
     memset(&W, 0, sizeof(W));
 }
 
-void world_update(float sCam){
+void world_update(float sCam, float dt){
+    W.clock += dt;
     // poll new segments
     for (int i = W.polled; i < road_ring_head(); i++){
         Seg *g = road_seg(i);
@@ -212,16 +244,19 @@ void world_city_glow(float sCam, Vector3 *pos, float *amt){
     }
 }
 
+void world_drop_counts(int *scenery){ *scenery = W.dropScen; }
+
 // -------- drawing --------
 
-static Vector3 xpt(Seg *g, float lat, float h){
-    return Vector3Add(g->pos, Vector3Add(Vector3Scale(g->right, lat), Vector3Scale(g->up, h)));
+// ground-snow fade toward a per-item snow color
+static Color snow_tint(Color c, Color snowCol, float amt){
+    return col_lerp(c, snowCol, weather_ground_snow()*amt);
 }
 
 static Color terrain_color(Seg *g, int r, int side, float h, float latAbs, float snow){
     static const int GRASS[ZN_COUNT][3] = {
         { 66, 72, 44 }, { 58, 68, 44 }, { 36, 50, 36 }, { 52, 60, 46 }, { 98, 78, 60 }, { 52, 52, 55 },
-        { 64, 76, 50 }
+        { 64, 76, 50 }, { 96, 102, 64 }
     };
     int zt = g->zone;
     Color c = { (unsigned char)GRASS[zt][0], (unsigned char)GRASS[zt][1], (unsigned char)GRASS[zt][2], 255 };
@@ -258,6 +293,24 @@ static void draw_terrain(int camI){
         if (!A || !B) break;
         for (int side = 0; side < 2; side++){
             float sg = side ? -1.0f : 1.0f;
+            // embankment face: the first terrain row can sit below the road
+            // plane (signed noise), so seal the seam with a vertical skirt
+            // from the pavement edge down to the terrain edge
+            {
+                float e0 = W.th[i & MASK][0][side]     - 0.10f;
+                float e1 = W.th[(i + 1) & MASK][0][side] - 0.10f;
+                float b0 = fminf(e0, 0.0f), b1 = fminf(e1, 0.0f);
+                if (b0 < -0.005f || b1 < -0.005f){
+                    float lat = sg*TERRAIN_EDGE;
+                    Color sc = col_scale(terrain_color(A, 0, side, 0.5f*(b0 + b1), TERRAIN_EDGE, snow), 0.72f);
+                    if (sg > 0)
+                        geo_quad(xpt(A, lat, 0.0f), xpt(A, lat, b0),
+                                 xpt(B, lat, b1), xpt(B, lat, 0.0f), sc, 0.0f);
+                    else
+                        geo_quad(xpt(A, lat, b0), xpt(A, lat, 0.0f),
+                                 xpt(B, lat, 0.0f), xpt(B, lat, b1), sc, 0.0f);
+                }
+            }
             for (int r = 0; r < TROWS - 1; r++){
                 float ha0 = W.th[i & MASK][r][side],     hb0 = W.th[(i + 1) & MASK][r][side];
                 float ha1 = W.th[i & MASK][r + 1][side], hb1 = W.th[(i + 1) & MASK][r + 1][side];
@@ -299,7 +352,7 @@ static void draw_tree_pine(Vector3 p, float scale, uint32_t seed){
 
 static void draw_tree_oak(Vector3 p, float scale, uint32_t seed){
     Color trunk = { 48, 36, 26, 255 };
-    Color c = col_lerp((Color){ 40, 58, 36, 255 }, (Color){ 202, 208, 212, 255 }, weather_ground_snow()*0.35f);
+    Color c = snow_tint((Color){ 40, 58, 36, 255 }, (Color){ 202, 208, 212, 255 }, 0.35f);
     c = col_scale(c, 0.85f + 0.3f*lat_f(seed ^ 7u));
     geo_cylinder(p, Vector3Add(p, (Vector3){ 0, 1.5f*scale, 0 }), 0.20f*scale, 0.13f*scale, 5, trunk, 0.0f);
     Vector3 ax = { 0, 1, 0 };
@@ -326,9 +379,10 @@ static void draw_building(Scen *x, Seg *g, float dist){
         Vector3 faceC = Vector3Add(c, Vector3Scale(faceN, x->w*0.5f + 0.06f));
         for (int wr = 0; wr < rows && W.winBudget > 0; wr++){
             for (int wc = 0; wc < cols; wc++){
-                uint32_t hsh = hash_u32(x->seed + (uint32_t)wr*31u + (uint32_t)wc*7u);
-                if ((hsh & 3) >= 2) continue;
-                Color wc1 = (hsh & 8) ? (Color){ 255, 214, 150, 255 } : (Color){ 200, 226, 255, 255 };
+                int idx = wr*9 + wc;
+                if (!(x->winOn[idx >> 3] & (1u << (idx & 7)))) continue;
+                Color wc1 = (x->winWarm[idx >> 3] & (1u << (idx & 7)))
+                          ? (Color){ 255, 214, 150, 255 } : (Color){ 200, 226, 255, 255 };
                 Vector3 wp = Vector3Add(faceC,
                     Vector3Add(Vector3Scale(fz, (float)(wc - cols/2)*2.6f),
                                Vector3Scale((Vector3){ 0, 1, 0 }, 2.2f + (float)wr*3.2f - x->h*0.5f)));
@@ -408,10 +462,7 @@ static void draw_pole_sign(Seg *g, float lat, float poleH, float ra, float rb,
     Color pc = { 130, 132, 136, 255 };
     geo_cylinder(base, Vector3Add(base, (Vector3){ 0, poleH, 0 }), ra, rb, 5, pc, 0.0f);
     Vector3 c = Vector3Add(base, (Vector3){ 0, panelY, 0 });
-    Vector3 bl = Vector3Add(c, Vector3Scale(g->right, -hw));
-    Vector3 br = Vector3Add(c, Vector3Scale(g->right, hw));
-    Vector3 tl = Vector3Add(bl, (Vector3){ 0, ph, 0 });
-    sign_add(sa, bl, br, Vector3Add(br, (Vector3){ 0, ph, 0 }), tl);
+    sign_panel(c, g->right, (Vector3){ 0, 1, 0 }, hw, ph, sa);
 }
 
 void world_draw(float sCam){
@@ -432,11 +483,11 @@ void world_draw(float sCam){
         case SC_PINE: draw_tree_pine(xpt(g, x->lat, -0.3f), x->scale, x->seed); break;
         case SC_OAK:  draw_tree_oak(xpt(g, x->lat, -0.3f), x->scale, x->seed); break;
         case SC_BUSH: {
-            Color c = col_lerp((Color){ 44, 60, 40, 255 }, (Color){ 200, 206, 212, 255 }, weather_ground_snow()*0.4f);
+            Color c = snow_tint((Color){ 44, 60, 40, 255 }, (Color){ 200, 206, 212, 255 }, 0.4f);
             geo_cone(xpt(g, x->lat, -0.2f), (Vector3){ 0, 1, 0 }, 0.7f*x->scale, 0.8f*x->scale, 5, c, 0.0f);
             break; }
         case SC_ROCK: {
-            Color c = col_lerp((Color){ 92, 88, 82, 255 }, (Color){ 205, 208, 214, 255 }, weather_ground_snow()*0.5f);
+            Color c = snow_tint((Color){ 92, 88, 82, 255 }, (Color){ 205, 208, 214, 255 }, 0.5f);
             geo_cone(xpt(g, x->lat, -0.2f), (Vector3){ 0, 1, 0 }, 0.8f*x->scale, 0.9f*x->scale, 4, c, 0.0f);
             geo_cone(Vector3Add(xpt(g, x->lat + 0.6f, -0.2f), (Vector3){ 0, 0.2f, 0 }), (Vector3){ 0, 1, 0 },
                      0.5f*x->scale, 0.6f*x->scale, 4, col_scale(c, 0.85f), 0.0f);
@@ -464,11 +515,7 @@ void world_draw(float sCam){
             Color pc = { 70, 66, 62, 255 };
             geo_box(Vector3Add(base, (Vector3){ 0, 3.5f, 0 }), g->right, g->up, g->fwd, 0.15f, 3.5f, 0.15f, pc, 0.0f);
             Vector3 c = Vector3Add(base, (Vector3){ 0, 8.6f, 0 });
-            float hw = 4.2f, hh = 2.1f;
-            Vector3 bl = Vector3Add(c, Vector3Scale(g->right, -hw));
-            Vector3 br = Vector3Add(c, Vector3Scale(g->right, hw));
-            Vector3 tl = Vector3Add(bl, (Vector3){ 0, 2*hh, 0 });
-            sign_add(SA_BILL1 + (int)(x->seed % 3), bl, br, Vector3Add(br, (Vector3){ 0, 2*hh, 0 }), tl);
+            sign_panel(c, g->right, (Vector3){ 0, 1, 0 }, 4.2f, 4.2f, SA_BILL1 + (int)(x->seed % 3));
             if (envl.lightsOn > 0.05f)
                 glow_add(Vector3Add(c, (Vector3){ 0, -1.5f, 0 }), (Color){ 255, 250, 240, 255 }, 2.6f, 1.6f, 0.05f);
             break; }
@@ -508,6 +555,35 @@ void world_draw(float sCam){
                 glow_add(Vector3Add(lp, (Vector3){ 0, 1.5f, 0 }), (Color){ 255, 214, 150, 255 },
                          0.30f, 1.0f, 0.14f);
             }
+            break; }
+        case SC_LIGHTHOUSE: {
+            // striped tower on a rock shelf at the shore, lantern plus a
+            // rotating beam drawn as an additive glow chain
+            Vector3 base = xpt(g, x->lat, -0.6f);
+            Color white = { 226, 228, 230, 255 }, red = { 178, 62, 52, 255 };
+            geo_cylinder(base, Vector3Add(base, (Vector3){ 0, 0.8f, 0 }),
+                         3.4f, 2.8f, 8, (Color){ 70, 72, 70, 255 }, 0.0f);
+            for (int k = 0; k < 4; k++){
+                float y0 = 0.6f + (float)k*2.2f;
+                float r0 = 2.0f - 0.22f*(float)k;
+                geo_cylinder(Vector3Add(base, (Vector3){ 0, y0, 0 }),
+                             Vector3Add(base, (Vector3){ 0, y0 + 2.2f, 0 }),
+                             r0, r0 - 0.22f, 8, (k & 1) ? red : white, 0.0f);
+            }
+            Vector3 top = Vector3Add(base, (Vector3){ 0, 9.4f, 0 });
+            geo_cylinder(top, Vector3Add(top, (Vector3){ 0, 0.35f, 0 }),
+                         1.35f, 1.15f, 8, (Color){ 40, 42, 46, 255 }, 0.0f);
+            Vector3 lp = Vector3Add(top, (Vector3){ 0, 0.75f, 0 });
+            geo_box(lp, g->right, g->up, g->fwd, 0.55f, 0.45f, 0.55f,
+                    (Color){ 255, 236, 190, 255 }, 1.0f);
+            glow_add(lp, (Color){ 255, 234, 170, 255 }, 1.1f, 1.0f, 0.30f);
+            // the sweep runs on the sim clock, so --seek stays deterministic
+            float ang = W.clock*1.05f + lat_f(x->seed)*6.2832f;
+            Vector3 dir = { cosf(ang), -0.18f, sinf(ang) };
+            for (int k = 1; k <= 5; k++)
+                glow_add(Vector3Add(lp, Vector3Scale(dir, 10.0f*(float)k)),
+                         (Color){ 255, 240, 200, 255 }, 1.2f + 0.8f*(float)k, 0.6f,
+                         0.10f*(1.0f - 0.12f*(float)k));
             break; }
         default: break;
         }

@@ -158,7 +158,7 @@ void env_draw_sky(Camera3D cam, float sCam, float dt){
     {
         float tgt = (road_zone_at(sCam) == ZN_MOUNTAIN && envl.stars > 0.5f && envIndoor < 0.3f)
                   ? envl.stars : 0.0f;
-        E.aurora += (tgt - E.aurora)*clampf(dt/8.0f, 0.0f, 1.0f);
+        E.aurora = approachf(E.aurora, tgt, dt/8.0f);
         if (E.aurora > 0.02f){
             const int NSTR = 26;
             Color green = { 70, 220, 150, 255 }, purple = { 130, 90, 220, 255 };

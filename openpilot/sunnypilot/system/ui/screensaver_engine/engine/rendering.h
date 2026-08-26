@@ -22,3 +22,9 @@ void  refl_add(Vector3 surfaceP, Color c, float size, float yStretch, float alph
 void  flatspot_add(Vector3 p, Vector3 right, Vector3 fwd, float hw, float hl,
                    Color c, float alpha);
 void  sign_add(int atlas, Vector3 bl, Vector3 br, Vector3 tr, Vector3 tl);
+// upright rectangular atlas panel: bottom edge centered at c, half width hw,
+// height ph along the given right/up basis
+void  sign_panel(Vector3 c, Vector3 right, Vector3 up, float hw, float ph, int atlas);
+
+// items the fixed queues dropped at capacity, for --stats
+void  render_drop_counts(int *glow, int *refl, int *flat, int *sign);
