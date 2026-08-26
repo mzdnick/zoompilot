@@ -318,8 +318,10 @@ alpha-long availability on its own; the engine gate still guards every other bod
 
 Device validation checklist (this failure's before/after metrics):
 
-- Camera 0x242 LINE1/LINE2 report real lane values, not mid-scale.
-- `STEER_RATE` LKAS_EFFECTIVE nonzero while steering, LKAS_BLOCK clear at speed.
+- `STEER_RATE` LKAS_EFFECTIVE nonzero while steering, LKAS_BLOCK clear at speed
+  (1 in 100% of the fault frames, 3% in the healthy alpha-long-off baseline). The
+  camera's own no-lines pattern (0x242 mid-scale, 0x243 BIT_1/LNV set) reads the same
+  in that healthy baseline — it is not a fault signature, do not judge by it.
 - No dash warnings; the 0x4d* background unchanged.
 - Stop, hold and resume through the protocol, across three ignition cycles.
 
