@@ -10,6 +10,9 @@ Import('env')
 raylib_dir = Path(importlib.util.find_spec("raylib").submodule_search_locations[0]) / "install"
 
 engine_env = env.Clone()
+# raylib symbols stay undefined on purpose; the global -Wl,--no-undefined forbids that
+engine_env['LINKFLAGS'] = [f for f in engine_env['LINKFLAGS'] if f != '-Wl,--no-undefined']
+
 engine_env['CPPPATH'] += [str(raylib_dir / "include"), "engine"]
 
 src = Glob("engine/*.c")

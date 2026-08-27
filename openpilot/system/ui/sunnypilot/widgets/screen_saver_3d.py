@@ -5,6 +5,7 @@ This file is part of sunnypilot and is licensed under the MIT License.
 See the LICENSE.md file in the root directory for more details.
 """
 import ctypes
+import os
 import time
 from pathlib import Path
 
@@ -35,7 +36,13 @@ class ScreenSaver3D(Widget):
 
   def _load(self):
     try:
-      lib = ctypes.CDLL(str(_LIB_PATH))
+      # raylib lives inside the cffi module with local scope; the engine's
+      # undefined refs only resolve if we promote that module to global first
+      pkg = Path(rl.__file__).parent
+      for provider in pkg.glob('_raylib*.so'):
+        ctypes.CDLL(str(provider), mode=os.RTLD_GLOBAL | os.RTLD_NOW)
+      # RTLD_NOW makes a failed binding raise here instead of crashing on first draw
+      lib = ctypes.CDLL(str(_LIB_PATH), mode=os.RTLD_NOW)
       lib.id_init.argtypes = [ctypes.c_uint64]
       lib.id_reset.argtypes = [ctypes.c_uint64]
       lib.id_render.argtypes = [ctypes.c_float]
