@@ -50,6 +50,10 @@ static struct {
     Burst   fw[3];
 } V;
 
+size_t events_state_size(void){ return sizeof V; }
+void   events_state_save(void *dst){ memcpy(dst, &V, sizeof V); }
+void   events_state_load(const void *src){ memcpy(&V, src, sizeof V); }
+
 void events_init(uint64_t seed){
     memset(&V, 0, sizeof(V));
     V.rng.s = mix_seed(seed, 0xBEEF);

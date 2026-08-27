@@ -4,6 +4,7 @@
 #include "weather.h"
 #include "road.h"
 #include "events.h"
+#include <string.h>
 
 EnvLight envl;
 float envIndoor = 0.0f;
@@ -16,6 +17,18 @@ static struct {
     float  starTw[260];
     float  aurora;      // smoothed aurora amount, 0..1
 } E;
+
+// envl is recomputed from E every env_update, so only E and the ramped
+// tunnel ambience need to ride in the snapshot
+size_t environment_state_size(void){ return sizeof E + sizeof envIndoor; }
+void environment_state_save(void *dst){
+    memcpy(dst, &E, sizeof E);
+    memcpy((char *)dst + sizeof E, &envIndoor, sizeof envIndoor);
+}
+void environment_state_load(const void *src){
+    memcpy(&E, src, sizeof E);
+    memcpy(&envIndoor, (const char *)src + sizeof E, sizeof envIndoor);
+}
 
 typedef struct { float t; int zen[3], hor[3], amb[3]; float sunI, fog, stars; } KF;
 

@@ -44,7 +44,7 @@ class ScreenSaver3D(Widget):
     self._start_time = None
     self._dismiss = False
     self._screensaver_timeout = 300
-    self._seed = int(time.monotonic_ns() & 0xFFFFFFFF)
+    self._seed = time.monotonic_ns()
     self._inited = False
     self._lib = None
     self._load_error = None
@@ -69,6 +69,7 @@ class ScreenSaver3D(Widget):
     lib.id_init.argtypes = [ctypes.c_uint64]
     lib.id_reset.argtypes = [ctypes.c_uint64]
     lib.id_render.argtypes = [ctypes.c_float]
+    lib.id_save.argtypes = []
     return lib
 
   @property
@@ -85,22 +86,28 @@ class ScreenSaver3D(Widget):
       self._start_time = time.monotonic()
       if self._lib is None:
         self._lib = self._load()
-      if self._lib is not None:
-        if self._inited:
-          self._lib.id_reset(self._seed)
-        else:
-          self._lib.id_init(self._seed)
-          self._inited = True
+      # first activation only: id_init restores the last snapshot when one is
+      # valid, else seeds a new drive. Later activations must not reset - the
+      # engine still holds the live state, so the drive resumes where it left off
+      if self._lib is not None and not self._inited:
+        self._lib.id_init(self._seed)
+        self._inited = True
     self._dismiss = False
+
+  def _save_state(self):
+    if self._lib is not None:
+      self._lib.id_save()
 
   def hide_event(self):
     super().hide_event()
     self._dismiss = False
     self._start_time = None
+    self._save_state()
 
   def _handle_mouse_release(self, mouse_pos):
     self._dismiss = True
     self._start_time = None
+    self._save_state()
     gui_app.pop_widget()
     return super()._handle_mouse_release(mouse_pos)
 
@@ -110,6 +117,7 @@ class ScreenSaver3D(Widget):
     if self._start_time and time.monotonic() - self._start_time > self._screensaver_timeout:
       self._dismiss = True
       self._start_time = None
+      self._save_state()
 
   def _render(self, rect: rl.Rectangle):
     self.set_rect(rect)

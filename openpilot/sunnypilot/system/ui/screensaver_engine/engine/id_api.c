@@ -11,12 +11,12 @@
 #include "weather.h"
 #include "rendering.h"
 #include "ui.h"
+#include "state.h"
 #include "util.h"
 #include <stdint.h>
 
-static float simT = 0.0f;
-static float camBob = 0.0f;
 static int   inited = 0;
+static float lastSave = -1e9f;
 
 void id_reset(uint64_t seed);
 
@@ -26,12 +26,16 @@ void id_init(uint64_t seed){
         ui_init(1);      // device runs are real trips: persist the odometer
         inited = 1;
     }
-    id_reset(seed);
+    // a valid snapshot continues the last drive exactly where it stopped,
+    // across reboots too; the seed only matters with nothing to restore
+    if (!state_load()) id_reset(seed);
+    lastSave = state_host()->simT;
 }
 
+void id_save(void){ state_save(); }
+
 void id_reset(uint64_t seed){
-    simT = 0.0f;
-    camBob = 0.0f;
+    *state_host() = (HostState){ 0 };   // clear anything a partial load left
     env_init(seed, 480.0f, 0.93f);
     road_init(seed);
     world_init();
@@ -42,8 +46,9 @@ void id_reset(uint64_t seed){
 
 void id_render(float dt){
     if (dt > 0.05f) dt = 0.05f;
-    simT += dt;
-    render_adas_time(simT);
+    HostState *hs = state_host();
+    hs->simT += dt;
+    render_adas_time(hs->simT);
     weather_update(dt);
     road_update(traffic_ego_s());
     events_update(dt);   // reads zones ahead; spawns settle before traffic runs
@@ -52,8 +57,14 @@ void id_render(float dt){
     env_update(dt);
     ui_update(dt);
 
-    camBob += dt;
-    float bob = sinf(camBob*1.3f)*0.025f + sinf(camBob*2.1f)*0.012f;
+    // crash safety: keep the snapshot within 30 s of the live state
+    if (hs->simT - lastSave >= 30.0f){
+        state_save();
+        lastSave = hs->simT;
+    }
+
+    hs->camBob += dt;
+    float bob = sinf(hs->camBob*1.3f)*0.025f + sinf(hs->camBob*2.1f)*0.012f;
     float egoS = traffic_ego_s();
     float curv = road_curv_at(egoS + 40.0f);
     Vector3 pos, fwd, right, up;
@@ -64,7 +75,7 @@ void id_render(float dt){
     float latLead = traffic_ego_lat() + clampf(curv*260.0f, -2.2f, 2.2f);
     Vector3 lt = road_point(egoS + lookLead, latLead, 1.15f + bob*0.5f);
     Vector3 viewDir = Vector3Normalize(Vector3Subtract(lt, cp));
-    float roll = clampf(curv*30.0f, -0.05f, 0.05f) + sinf(camBob*0.9f)*0.004f;
+    float roll = clampf(curv*30.0f, -0.05f, 0.05f) + sinf(hs->camBob*0.9f)*0.004f;
     Vector3 cup = Vector3RotateByAxisAngle((Vector3){ 0, 1, 0 }, viewDir, -roll);
 
     Camera3D cam = { 0 };

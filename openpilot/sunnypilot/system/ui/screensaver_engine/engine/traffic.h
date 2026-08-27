@@ -1,6 +1,7 @@
 #pragma once
 #include "raylib.h"
 #include <stdint.h>
+#include <stddef.h>
 
 #define NPC_MAX 56
 
@@ -14,6 +15,10 @@ typedef struct VehInfo {
 
 void  traffic_init(uint64_t seed);
 void  traffic_update(float dt);
+// full-state snapshot (state.c)
+size_t traffic_state_size(void);
+void   traffic_state_save(void *dst);
+void   traffic_state_load(const void *src);
 void  traffic_set_showcase(int on);   // park one of each vehicle ahead for QA
 float traffic_ego_s(void);
 float traffic_ego_v(void);

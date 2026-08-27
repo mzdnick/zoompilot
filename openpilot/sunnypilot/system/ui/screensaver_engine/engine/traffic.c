@@ -35,6 +35,10 @@ static struct {
     int   showcase;
 } T;
 
+size_t traffic_state_size(void){ return sizeof T; }
+void   traffic_state_save(void *dst){ memcpy(dst, &T, sizeof T); }
+void   traffic_state_load(const void *src){ memcpy(&T, src, sizeof T); }
+
 void traffic_set_showcase(int on){
     T.showcase = on;
     if (!on) return;

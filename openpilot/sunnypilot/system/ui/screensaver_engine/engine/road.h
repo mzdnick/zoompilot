@@ -2,6 +2,7 @@
 #include "raylib.h"
 #include "raymath.h"
 #include <stdint.h>
+#include <stddef.h>
 
 #define SEG_LEN         4.0f
 #define RING_SEGS       512
@@ -47,6 +48,10 @@ typedef struct Seg {
 
 void    road_init(uint64_t seed);
 void    road_update(float sCam);
+// full-state snapshot (state.c)
+size_t  road_state_size(void);
+void    road_state_save(void *dst);
+void    road_state_load(const void *src);
 Seg    *road_seg(int gi);                 // NULL outside ring window
 int     road_ring_head(void);             // next global seg index to generate
 Vector3 road_point(float s, float lat, float h);

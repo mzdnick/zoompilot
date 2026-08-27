@@ -29,6 +29,10 @@ static struct {
     Drop  snowD[SNOW_N];
 } W;
 
+size_t weather_state_size(void){ return sizeof W; }
+void   weather_state_save(void *dst){ memcpy(dst, &W, sizeof W); }
+void   weather_state_load(const void *src){ memcpy(&W, src, sizeof W); }
+
 const char *weather_name(void){
     static const char *N[4] = { "clear", "rain", "fog", "snow" };
     return W.blending ? N[W.nxt] : N[W.cur];

@@ -34,6 +34,10 @@ static struct {
     int      firstZone;
 } R;
 
+size_t road_state_size(void){ return sizeof R; }
+void   road_state_save(void *dst){ memcpy(dst, &R, sizeof R); }
+void   road_state_load(const void *src){ memcpy(&R, src, sizeof R); }
+
 // chain-full and beyond-coverage zone queries, reported by --stats
 static int dropZone, zoneOverQ;
 

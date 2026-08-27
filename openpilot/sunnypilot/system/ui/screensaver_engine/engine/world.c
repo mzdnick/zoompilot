@@ -39,6 +39,10 @@ static struct {
     float    clock;         // sim-time clock for animated scenery (lighthouse sweep)
 } W;
 
+size_t world_state_size(void){ return sizeof W; }
+void   world_state_save(void *dst){ memcpy(dst, &W, sizeof W); }
+void   world_state_load(const void *src){ memcpy(&W, src, sizeof W); }
+
 // -------- terrain heights per new segment --------
 
 static void terrain_new(int i, Seg *g){
