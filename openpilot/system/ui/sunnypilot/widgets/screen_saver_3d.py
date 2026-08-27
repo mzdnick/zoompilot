@@ -12,7 +12,7 @@ from pathlib import Path
 import pyray as rl
 
 from openpilot.common.params import Params
-from openpilot.system.ui.lib.application import gui_app
+from openpilot.system.ui.lib.application import FontWeight, gui_app
 from openpilot.system.ui.widgets import Widget
 
 _LIB_PATH = Path(__file__).resolve().parents[4] / 'sunnypilot/system/ui/screensaver_engine/libinfinite_drive.so'
@@ -29,26 +29,30 @@ class ScreenSaver3D(Widget):
     self._seed = int(time.monotonic_ns() & 0xFFFFFFFF)
     self._inited = False
     self._lib = None
+    self._load_error = None
 
   @staticmethod
   def available() -> bool:
     return _LIB_PATH.exists()
 
   def _load(self):
+    self._load_error = None
+    # raylib lives inside the cffi module with local scope; the engine's
+    # undefined refs only resolve if we promote that module to global first
+    pkg = Path(rl.__file__).parent
     try:
-      # raylib lives inside the cffi module with local scope; the engine's
-      # undefined refs only resolve if we promote that module to global first
-      pkg = Path(rl.__file__).parent
-      for provider in pkg.glob('_raylib*.so'):
+      for provider in sorted(pkg.glob('_raylib*.so')):
         ctypes.CDLL(str(provider), mode=os.RTLD_GLOBAL | os.RTLD_NOW)
       # RTLD_NOW makes a failed binding raise here instead of crashing on first draw
       lib = ctypes.CDLL(str(_LIB_PATH), mode=os.RTLD_NOW)
-      lib.id_init.argtypes = [ctypes.c_uint64]
-      lib.id_reset.argtypes = [ctypes.c_uint64]
-      lib.id_render.argtypes = [ctypes.c_float]
-      return lib
-    except OSError:
+    except OSError as e:
+      # shown on screen: devices in the field have no shell to read logs from
+      self._load_error = str(e)[:100]
       return None
+    lib.id_init.argtypes = [ctypes.c_uint64]
+    lib.id_reset.argtypes = [ctypes.c_uint64]
+    lib.id_render.argtypes = [ctypes.c_float]
+    return lib
 
   @property
   def is_active(self) -> bool:
@@ -96,4 +100,8 @@ class ScreenSaver3D(Widget):
       self._lib.id_render(rl.get_frame_time())
     else:
       rl.clear_background(rl.BLACK)
+      if self._load_error:
+        font = gui_app.font(FontWeight.NORMAL)
+        pos = rl.Vector2(40, 40)
+        rl.draw_text_ex(font, self._load_error, pos, 40, 2, rl.WHITE)
     return -1
