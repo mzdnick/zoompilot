@@ -5,7 +5,9 @@ This file is part of sunnypilot and is licensed under the MIT License.
 See the LICENSE.md file in the root directory for more details.
 """
 import ctypes
+import importlib.util
 import os
+import sys
 import time
 from pathlib import Path
 
@@ -16,6 +18,22 @@ from openpilot.system.ui.lib.application import FontWeight, gui_app
 from openpilot.system.ui.widgets import Widget
 
 _LIB_PATH = Path(__file__).resolve().parents[4] / 'sunnypilot/system/ui/screensaver_engine/libinfinite_drive.so'
+
+
+def _raylib_providers() -> list[Path]:
+  # pyray is only a shim package; the cffi module with raylib inside lives in
+  # the raylib package. Prefer paths python already loaded (same name = promote,
+  # not a second copy), then fall back to the package dir.
+  found: dict[str, Path] = {}
+  for mod in list(sys.modules.values()):
+    f = getattr(mod, '__file__', None)
+    if f and f.endswith('.so') and '_raylib' in Path(f).name:
+      found[f] = Path(f)
+  spec = importlib.util.find_spec('raylib')
+  if spec and spec.submodule_search_locations:
+    for f in Path(spec.submodule_search_locations[0]).glob('_raylib*.so'):
+      found.setdefault(str(f), f)
+  return list(found.values())
 
 
 class ScreenSaver3D(Widget):
@@ -39,15 +57,14 @@ class ScreenSaver3D(Widget):
     self._load_error = None
     # raylib lives inside the cffi module with local scope; the engine's
     # undefined refs only resolve if we promote that module to global first
-    pkg = Path(rl.__file__).parent
     try:
-      for provider in sorted(pkg.glob('_raylib*.so')):
+      for provider in _raylib_providers():
         ctypes.CDLL(str(provider), mode=os.RTLD_GLOBAL | os.RTLD_NOW)
       # RTLD_NOW makes a failed binding raise here instead of crashing on first draw
       lib = ctypes.CDLL(str(_LIB_PATH), mode=os.RTLD_NOW)
     except OSError as e:
       # shown on screen: devices in the field have no shell to read logs from
-      self._load_error = str(e)[:100]
+      self._load_error = str(e).replace(f'{_LIB_PATH.parent}/', '')[:100]
       return None
     lib.id_init.argtypes = [ctypes.c_uint64]
     lib.id_reset.argtypes = [ctypes.c_uint64]
