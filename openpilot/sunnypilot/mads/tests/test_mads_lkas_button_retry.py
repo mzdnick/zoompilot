@@ -35,7 +35,7 @@ class TestLkasButtonRetry:
     mads.enabled_toggle = True
     return mads, events, events_sp
 
-  def _frame(self, mads, events, events_sp, press, no_entry):
+  def _frame(self, mads, events, events_sp, press, no_entry, lka_off=False):
     # the real cycle rebuilds both event sets every frame
     events.clear()
     events_sp.clear()
