@@ -10,6 +10,7 @@ from openpilot.cereal import log, custom
 from opendbc.car import structs
 from opendbc.car.hyundai.values import HyundaiFlags
 from openpilot.common.params import Params
+from openpilot.common.realtime import DT_CTRL
 from openpilot.sunnypilot.mads.helpers import MadsSteeringModeOnBrake, read_steering_mode_param, MADS_NO_ACC_MAIN_BUTTON
 from openpilot.sunnypilot.mads.state import StateMachine, GEARS_ALLOW_PAUSED_SILENT
 
@@ -29,6 +30,12 @@ IGNORED_SAFETY_MODES = (SafetyModel.silent, SafetyModel.noOutput)
 LATERAL_MISMATCH_WARN_FRAMES = 20
 LATERAL_MISMATCH_DISABLE_FRAMES = 200
 
+# A button press is a one-frame event, so a no-entry that coincides with it (the camera's
+# LKAS re-enable can blip a fault bit for a few frames) eats the request entirely. Re-offer
+# the lateral enable for this window after a press; the machine still engages only once no
+# no-entry remains.
+LKAS_BUTTON_REQUEST_FRAMES = int(0.5 / DT_CTRL)
+
 
 class ModularAssistiveDrivingSystem:
   def __init__(self, selfdrive):
@@ -40,6 +47,7 @@ class ModularAssistiveDrivingSystem:
     self.active = False
     self.available = False
     self.lateral_mismatch_counter = 0
+    self.lkas_button_request_frames = 0
     self.allow_always = False
     self.no_main_cruise = False
     self.selfdrive = selfdrive
@@ -185,6 +193,14 @@ class ModularAssistiveDrivingSystem:
             self.events_sp.add(EventNameSP.lkasDisable)
         else:
           self.events_sp.add(EventNameSP.lkasEnable)
+          self.lkas_button_request_frames = LKAS_BUTTON_REQUEST_FRAMES
+
+    # Re-offer the button's lateral enable for a short window (see LKAS_BUTTON_REQUEST_FRAMES):
+    # the press is long gone by the time a coincident no-entry clears.
+    if self.lkas_button_request_frames > 0:
+      self.lkas_button_request_frames -= 1
+      if not self.enabled:
+        self.events_sp.add(EventNameSP.lkasEnable)
 
     if not CS.cruiseState.available and not self.no_main_cruise:
       self.events.remove(EventName.buttonEnable)
