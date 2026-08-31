@@ -9,7 +9,8 @@ from openpilot.cereal import log, custom
 from opendbc.car.structs import car
 from openpilot.common.constants import CV
 from openpilot.sunnypilot.selfdrive.selfdrived.events_base import EventsBase, Priority, ET, Alert, \
-  NoEntryAlert, ImmediateDisableAlert, EngagementAlert, NormalPermanentAlert, AlertCallbackType, wrong_car_mode_alert
+  NoEntryAlert, ImmediateDisableAlert, EngagementAlert, NormalPermanentAlert, AlertCallbackType, EmptyAlert, \
+  wrong_car_mode_alert
 from openpilot.sunnypilot.selfdrive.controls.lib.speed_limit import PCM_LONG_REQUIRED_MAX_SET_SPEED, CONFIRM_SPEED_THRESHOLD
 from openpilot.common.hardware import HARDWARE
 
@@ -105,6 +106,19 @@ EVENTS_SP: dict[int, dict[str, Alert | AlertCallbackType]] = {
       "Manual Steering Required",
       AlertStatus.normal, AlertSize.mid,
       Priority.LOW, VisualAlert.none, AudibleAlert.disengage, 1.),
+  },
+
+  EventNameSP.stockLkasOff: {
+    # Mazda: invalidLkasSetting is swapped for this when MADS is on (selfdrived.step).
+    # Stock LKAS off is a driver choice, not a fault: the selfdrive still engages on the
+    # stock cruise, lateral cannot, and an enabled lateral drops. The drop carries no
+    # alert of its own; the confirmed button press fires manualSteeringRequired.
+    ET.USER_DISABLE: EmptyAlert,
+    ET.NO_ENTRY: Alert(
+      "Lateral Disabled",
+      "LKA button is OFF",
+      AlertStatus.normal, AlertSize.mid,
+      Priority.LOW, VisualAlert.none, AudibleAlert.refuse, 3.),
   },
 
   EventNameSP.manualLongitudinalRequired: {

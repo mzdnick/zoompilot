@@ -649,6 +649,13 @@ class SelfdriveD(CruiseHelper):
   def step(self):
     CS = self.data_sample()
     self.update_events(CS)
+    # Mazda with MADS on: the dash LKA button is the lateral toggle, and stock LKAS off is
+    # a driver choice, not a no-entry fault. Swap it for the SP equivalent before the
+    # machines run, so the selfdrive still engages on the stock cruise while the MADS
+    # machine alone refuses lateral. With MADS off the whole-system no-entry stands.
+    if self.CP.brand == "mazda" and self.mads.enabled_toggle and CS.invalidLkasSetting:
+      self.events.remove(EventName.invalidLkasSetting)
+      self.events_sp.add(custom.OnroadEventSP.EventName.stockLkasOff)
     if not self.CP.passive and self.initialized:
       self.enabled, self.active = self.state_machine.update(self.events)
     if not self.CP.notCar:
