@@ -198,11 +198,15 @@ def personality_changed_alert(CP: car.CarParams, CS: car.CarState, sm: messaging
 
 
 def invalid_lkas_setting_alert(CP: car.CarParams, CS: car.CarState, sm: messaging.SubMaster, metric: bool, soft_disable_time: int, personality) -> Alert:
+  # Mazda: LKA off is a deliberate state, not a fault. The dash button doubles as the
+  # lateral toggle and stock ACC runs with openpilot out, so the permanent banner is
+  # silent; the NO_ENTRY toast on engage attempts still shows.
+  if CP.brand == "mazda":
+    return Alert("", "", AlertStatus.normal, AlertSize.none, Priority.LOWEST,
+                 VisualAlert.none, AudibleAlert.none, .1)
   text = "Toggle stock LKAS on or off to engage"
   if CP.brand == "tesla":
     text = "Switch to Traffic-Aware Cruise Control to engage"
-  elif CP.brand == "mazda":
-    text = "Enable your car's LKAS to engage"
   elif CP.brand == "nissan":
     text = "Disable your car's stock LKAS to engage"
   return NormalPermanentAlert("Invalid LKAS setting", text)
