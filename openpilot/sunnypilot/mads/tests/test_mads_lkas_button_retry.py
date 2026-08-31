@@ -41,11 +41,17 @@ class TestLkasButtonRetry:
     events_sp.clear()
     if no_entry:
       events.add(EventName.steerUnavailable)
+    if lka_off:
+      # what selfdrived.step swaps in for invalidLkasSetting with MADS on
+      events_sp.add(EventNameSP.stockLkasOff)
     buttonEvents = [SimpleNamespace(type=ButtonType.lkas, pressed=True)] if press else []
-    mads.update(SimpleNamespace(buttonEvents=buttonEvents,
-                                cruiseState=SimpleNamespace(available=True),
-                                brakePressed=False, regenBraking=False, gasPressed=False,
-                                gearShifter=structs.CarState.GearShifter.drive))
+    cs = SimpleNamespace(buttonEvents=buttonEvents,
+                         cruiseState=SimpleNamespace(available=True),
+                         invalidLkasSetting=lka_off,
+                         brakePressed=False, regenBraking=False, gasPressed=False,
+                         gearShifter=structs.CarState.GearShifter.drive)
+    mads.update(cs)
+    mads.selfdrive.CS_prev = cs
 
   def test_press_survives_a_transient_no_entry(self):
     mads, events, events_sp = self._mads()
@@ -71,4 +77,22 @@ class TestLkasButtonRetry:
     assert mads.state_machine.state == State.disabled
     # the window is gone and so is the re-offer
     assert mads.lkas_button_request_frames == 0
+    assert not events_sp.has(EventNameSP.lkasEnable)
+
+  def test_the_lka_flag_clearing_edge_engages_without_any_press(self):
+    # the camera's re-enable can flicker past the producer's two-frame debounce; the
+    # undebounced invalidLkasSetting clearing edge is the on-press (device-verified
+    # need: the press alone did not re-engage lateral mid-cruise)
+    mads, events, events_sp = self._mads()
+    self._frame(mads, events, events_sp, press=False, no_entry=False, lka_off=True)
+    assert mads.state_machine.state == State.disabled
+    self._frame(mads, events, events_sp, press=False, no_entry=False, lka_off=False)
+    assert mads.state_machine.state == State.enabled
+
+  def test_no_enable_while_the_flag_stays_set(self):
+    # LKA still off: the clearing edge never fires and lateral stays off
+    mads, events, events_sp = self._mads()
+    for _ in range(30):
+      self._frame(mads, events, events_sp, press=False, no_entry=False, lka_off=True)
+    assert mads.state_machine.state == State.disabled
     assert not events_sp.has(EventNameSP.lkasEnable)
