@@ -30,6 +30,13 @@ IGNORED_SAFETY_MODES = (SafetyModel.silent, SafetyModel.noOutput)
 LATERAL_MISMATCH_WARN_FRAMES = 20
 LATERAL_MISMATCH_DISABLE_FRAMES = 200
 
+# The panda denying lateral while the selfdrive is out and MADS still holds it engaged
+# is not a transient once it persists: a wheel cancel leaves exactly that state when the
+# panda drops lateral on driver steering (route 9ff65375--e27af563a8 t+209-211, the
+# counter matured into the harsh controlsMismatchLateral fault). Drop lateral quietly
+# at half a second; the mismatch stays as the backstop.
+LATERAL_MISMATCH_SOFT_FRAMES = int(0.5 / DT_CTRL)
+
 # A button press is a one-frame event, so a no-entry that coincides with it (the camera's
 # LKAS re-enable can blip a fault bit for a few frames) eats the request entirely. Re-offer
 # the lateral enable for this window after a press; the machine still engages only once no
@@ -236,6 +243,8 @@ class ModularAssistiveDrivingSystem:
     # while we control), so the driver hears about it well before the disable
     if self.lateral_mismatch_counter >= LATERAL_MISMATCH_WARN_FRAMES:
       self.events_sp.add(EventNameSP.controlsMismatchLateralWarning)
+    if LATERAL_MISMATCH_SOFT_FRAMES <= self.lateral_mismatch_counter < LATERAL_MISMATCH_DISABLE_FRAMES:
+      self.events_sp.add(EventNameSP.lkasDisable)
     if self.lateral_mismatch_counter >= LATERAL_MISMATCH_DISABLE_FRAMES:
       self.events_sp.add(EventNameSP.controlsMismatchLateral)
 

@@ -49,6 +49,7 @@ class TestLkasButtonRetry:
                          cruiseState=SimpleNamespace(available=True),
                          invalidLkasSetting=lka_off,
                          brakePressed=False, regenBraking=False, gasPressed=False,
+                         standstill=False,
                          gearShifter=structs.CarState.GearShifter.drive)
     mads.update(cs)
     mads.selfdrive.CS_prev = cs
@@ -96,3 +97,21 @@ class TestLkasButtonRetry:
       self._frame(mads, events, events_sp, press=False, no_entry=False, lka_off=True)
     assert mads.state_machine.state == State.disabled
     assert not events_sp.has(EventNameSP.lkasEnable)
+
+  def test_panda_denial_drops_lateral_softly(self):
+    # route 9ff65375--e27af563a8 t+209-211: a wheel cancel disengages the selfdrive,
+    # MADS holds lateral, the panda denies it, and the old code let the counter run to
+    # the harsh controlsMismatchLateral fault. The soft drop must land first.
+    mads, events, events_sp = self._mads()
+    mads.selfdrive.sm.__getitem__.return_value = [SimpleNamespace(
+      controlsAllowedLateral=False, safetyModel=structs.CarParams.SafetyModel.mazda)]
+    # lateral engages on the button press, then the cancel takes the selfdrive out
+    self._frame(mads, events, events_sp, press=True, no_entry=False, lka_off=False)
+    assert mads.state_machine.state == State.enabled
+    mads.selfdrive.enabled = False
+    saw_mismatch = False
+    for _ in range(60):
+      self._frame(mads, events, events_sp, press=False, no_entry=False, lka_off=False)
+      saw_mismatch |= events_sp.has(EventNameSP.controlsMismatchLateral)
+    assert mads.state_machine.state == State.disabled
+    assert not saw_mismatch
