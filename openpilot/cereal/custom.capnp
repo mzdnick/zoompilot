@@ -536,6 +536,12 @@ struct CustomReserved19 @0xa4f1eb3323f5f582 {
 struct CarStateZP @0xc879af11c43cb400 {
   cruiseSession @0 :CruiseSession;
 
+  # True once a dedicated physical lateral button is proven on this car (the Mazda TJA
+  # wheel button, latched at first press). MADS then treats that button as the lateral
+  # toggle regardless of ACC main, and ACC-main changes never enable or revoke lateral.
+  # False everywhere else; no consumer may act on it for other cars.
+  madsButtonOwnsLateral @1 :Bool;
+
   # The card-side cruise arbiter's session, published at carState rate. On non-pcm
   # cars this is the authoritative SLA session: plannerd mirrors it into
   # longitudinalPlanSP.speedLimit.assist for the UI, and the ICBM servo freezes while
