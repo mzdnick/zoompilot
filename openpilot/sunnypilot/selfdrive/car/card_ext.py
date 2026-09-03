@@ -17,9 +17,10 @@ class CardExt:
   one published. sm is card's SubMaster, already updated this frame.
   """
 
-  def __init__(self, CP: structs.CarParams, CP_SP: structs.CarParamsSP, params: Params, sm, v_cruise_helper) -> None:
+  def __init__(self, CP: structs.CarParams, CP_SP: structs.CarParamsSP, params: Params, sm, v_cruise_helper, ci) -> None:
     self.sm = sm
     self.v_cruise_helper = v_cruise_helper
+    self.ci = ci
     # onroad AlphaLongitudinalEnabled changes: sequence any ECU hand-back, then cycle
     self.alpha_long_monitor = AlphaLongToggleMonitor(CP, params)
 
@@ -30,6 +31,9 @@ class CardExt:
     helper.reconcile_setpoint_with_dash(CS)
     # publish the arbiter's session (plannerd mirrors it; the ICBM servo freezes on a prompt)
     helper.cruise_arbiter.fill_msg(CS_SP)
+    # publish the live car state's hardware latches: the Mazda TJA wheel button sets
+    # tja_hw_seen on its first press, and MADS changes its button semantics from then on
+    CS_SP.zoompilot.madsButtonOwnsLateral = bool(getattr(self.ci.CS, "tja_hw_seen", False))
 
   def controls_update(self, CS, CC, CC_SP: structs.CarControlSP) -> structs.CarControlSP:
     """Runs just before CI.apply on the converted CarControlSP struct, which it may edit."""
