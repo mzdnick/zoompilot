@@ -97,6 +97,9 @@ class SelfdriveD(CruiseHelper):
 
     # TODO: de-couple selfdrived with card/conflate on carState without introducing controls mismatches
     self.car_state_sock = messaging.sub_sock('carState', timeout=20)
+    # fork car state (hardware latches MADS keys on); drained, never blocking the 100 Hz loop
+    self.car_state_sp_sock = messaging.sub_sock('carStateSP')
+    self.CS_SP = None
 
     ignore = self.sensor_packets + self.gps_packets + ['alertDebug', 'lateralManeuverPlan'] + ['modelDataV2SP', 'longitudinalPlanSP']
     if SIMULATION:
@@ -528,6 +531,8 @@ class SelfdriveD(CruiseHelper):
   def data_sample(self):
     _car_state = messaging.recv_one(self.car_state_sock)
     CS = _car_state.carState if _car_state else self.CS_prev
+    for sp in messaging.drain_sock(self.car_state_sp_sock):
+      self.CS_SP = sp.carStateSP
 
     self.sm.update(0)
 
@@ -652,7 +657,7 @@ class SelfdriveD(CruiseHelper):
     if not self.CP.passive and self.initialized:
       self.enabled, self.active = self.state_machine.update(self.events)
     if not self.CP.notCar:
-      self.mads.update(CS)
+      self.mads.update(CS, self.CS_SP)
     self.update_alerts(CS)
 
     self.button_state_tracker.update(CS)

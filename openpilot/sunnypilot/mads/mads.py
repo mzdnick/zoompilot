@@ -42,6 +42,9 @@ class ModularAssistiveDrivingSystem:
     self.lateral_mismatch_counter = 0
     self.allow_always = False
     self.no_main_cruise = False
+    # a dedicated physical lateral button is proven on this car (set per update from
+    # CarStateSP): the button is the lateral toggle, and ACC main never gates it
+    self.lateral_button_owns = False
     self.selfdrive = selfdrive
     self.selfdrive.enabled_prev = False
     self.state_machine = StateMachine(self)
@@ -177,7 +180,7 @@ class ModularAssistiveDrivingSystem:
       if be.type == ButtonType.cancel:
         if not self.selfdrive.enabled and self.selfdrive.enabled_prev:
           self.events_sp.add(EventNameSP.manualLongitudinalRequired)
-      if be.type == ButtonType.lkas and be.pressed and (CS.cruiseState.available or self.allow_always):
+      if be.type == ButtonType.lkas and be.pressed and (CS.cruiseState.available or self.allow_always or self.lateral_button_owns):
         if self.enabled:
           if self.selfdrive.enabled:
             self.events_sp.add(EventNameSP.manualSteeringRequired)
@@ -186,10 +189,11 @@ class ModularAssistiveDrivingSystem:
         else:
           self.events_sp.add(EventNameSP.lkasEnable)
 
-    if not CS.cruiseState.available and not self.no_main_cruise:
+    if not CS.cruiseState.available and not self.no_main_cruise and not self.lateral_button_owns:
       self.events.remove(EventName.buttonEnable)
       # Where ACC main is the only MADS off-switch, enforce its level as well as its falling
-      # edge. Platforms with a separate MADS button keep edge-only behavior.
+      # edge. Platforms with a separate MADS button keep edge-only behavior, and a car whose
+      # lateral button owns lateral is never switched off by ACC main at all.
       if self.selfdrive.CS_prev.cruiseState.available or (self.enabled and not self.allow_always):
         self.events_sp.add(EventNameSP.lkasDisable)
 
@@ -219,9 +223,13 @@ class ModularAssistiveDrivingSystem:
     self.events.remove(EventName.pedalPressed)
     self.events.remove(EventName.wrongCruiseMode)
 
-  def update(self, CS: structs.CarState):
+  def update(self, CS: structs.CarState, CS_SP=None):
     if not self.enabled_toggle:
       return
+
+    # CarStateZP.madsButtonOwnsLateral: card publishes it from the car's hardware latch,
+    # one frame stale at most, and only the cars that own a lateral button ever set it
+    self.lateral_button_owns = bool(CS_SP.zoompilot.madsButtonOwnsLateral) if CS_SP is not None else False
 
     self.data_sample()
 
