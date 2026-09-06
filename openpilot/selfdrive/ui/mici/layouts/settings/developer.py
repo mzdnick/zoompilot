@@ -1,4 +1,5 @@
 from collections.abc import Callable
+from openpilot.common.swaglog import cloudlog
 from openpilot.common.time_helpers import system_time_valid
 from openpilot.system.ui.widgets.scroller import NavScroller
 from openpilot.selfdrive.ui.mici.widgets.button import BigButton, BigToggle, BigParamControl, BigCircleParamControl, GreyBigButton
@@ -145,6 +146,9 @@ class DeveloperLayoutMici(NavScroller):
     if ui_state.CP is not None:
       alpha_avail = ui_state.CP.alphaLongitudinalAvailable
       if not alpha_avail or ui_state.is_release:
+        if not alpha_avail:
+          cloudlog.warning({"event": "alphaLongRemoved", "reason": "alphaLongitudinalAvailable is false",
+                            "carFingerprint": str(ui_state.CP.carFingerprint)})
         self._alpha_long_toggle.set_visible(False)
         ui_state.params.remove("AlphaLongitudinalEnabled")
       else:

@@ -122,6 +122,9 @@ class SelfdriveD(CruiseHelper):
 
     # cleanup old params
     if not self.CP.alphaLongitudinalAvailable:
+      # A silent removal here reads as "the device reverted the toggle"; say why it happened
+      cloudlog.warning({"event": "alphaLongRemoved", "reason": "alphaLongitudinalAvailable is false for this fingerprint",
+                        "carFingerprint": str(self.CP.carFingerprint), "fingerprintSource": str(self.CP.fingerprintSource)})
       self.params.remove("AlphaLongitudinalEnabled")
     if not self.CP.openpilotLongitudinalControl:
       self.params.remove("ExperimentalMode")
