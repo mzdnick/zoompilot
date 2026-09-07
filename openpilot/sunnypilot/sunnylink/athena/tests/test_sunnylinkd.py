@@ -30,9 +30,10 @@ class TestSunnylinkdMethods(OpenpilotTestCase):
       "AlphaLongitudinalEnabled": "1",
     }
 
-    sunnylinkd.saveParams(blocked_params)
+    results = sunnylinkd.saveParams(blocked_params)
 
     assert len(self.saved_params) == 0
+    assert results == {key: "blocked" for key in blocked_params}
 
   def test_saveParams_allowed(self):
     allowed_params = {
@@ -40,13 +41,14 @@ class TestSunnylinkdMethods(OpenpilotTestCase):
       "MyCustomParam": "123"
     }
 
-    sunnylinkd.saveParams(allowed_params)
+    results = sunnylinkd.saveParams(allowed_params)
 
     # verify content
     assert len(self.saved_params) == 2
     keys_saved = [p[0] for p in self.saved_params]
     assert "SpeedLimitOffset" in keys_saved
     assert "MyCustomParam" in keys_saved
+    assert results == {key: "saved" for key in allowed_params}
 
   def test_saveParams_mixed(self):
     mixed_params = {
@@ -54,9 +56,21 @@ class TestSunnylinkdMethods(OpenpilotTestCase):
       "SpeedLimitOffset": "10"
     }
 
-    sunnylinkd.saveParams(mixed_params)
+    results = sunnylinkd.saveParams(mixed_params)
 
     # should save allowed one
     assert len(self.saved_params) == 1
     assert self.saved_params[0][0] == "SpeedLimitOffset"
     assert self.saved_params[0][1] == "10"
+    assert results == {"GithubUsername": "blocked", "SpeedLimitOffset": "saved"}
+
+  def test_saveParams_error(self):
+    def failing_save(key, value, compression=False):
+      raise RuntimeError("boom")
+
+    sunnylinkd.save_param_from_base64_encoded_string = failing_save  # ty: ignore[invalid-assignment]
+
+    results = sunnylinkd.saveParams({"SpeedLimitOffset": "10"})
+
+    assert results == {"SpeedLimitOffset": "error"}
+    assert len(self.saved_params) == 0

@@ -235,24 +235,33 @@ def getParams(params_keys: list[str], compression: bool = False) -> str | dict[s
 
 
 @dispatcher.add_method
-def saveParams(params_to_update: dict[str, str], compression: bool = False) -> None:
+def saveParams(params_to_update: dict[str, str], compression: bool = False) -> dict[str, str]:
+  results: dict[str, str] = {}
   for key, value in params_to_update.items():
     # disallow modifications to blocked parameters
     if key in BLOCKED_PARAMS:
       cloudlog.warning(f"sunnylinkd.saveParams.blocked: Attempted to modify blocked parameter '{key}'")
+      results[key] = "blocked"
       continue
 
     try:
       save_param_from_base64_encoded_string(key, value, compression)
+      results[key] = "saved"
     except Exception as e:
       cloudlog.error(f"sunnylinkd.saveParams.exception {e}")
+      results[key] = "error"
 
-  # Increment version counter for frontend change detection
-  try:
-    current = int(params.get("ParamsVersion") or "0")
-    params.put("ParamsVersion", str(current + 1), block=True)
-  except Exception:
-    pass
+  # Signal the frontend only when something actually changed: bumping the version on an
+  # all-blocked batch rendered as a false "N settings changed on device" banner while the
+  # app's next poll reverted the toggle (AlphaLongitudinalEnabled support ticket).
+  if any(status == "saved" for status in results.values()):
+    try:
+      current = int(params.get("ParamsVersion") or "0")
+      params.put("ParamsVersion", str(current + 1), block=True)
+    except Exception:
+      pass
+
+  return results
 
 
 def startLocalProxy(global_end_event: threading.Event, remote_ws_uri: str, local_port: int) -> dict[str, int]:
