@@ -9,6 +9,7 @@ from enum import Enum
 from openpilot.cereal import messaging, log, custom
 from opendbc.car.structs import car
 from openpilot.common.params import Params
+from openpilot.common.swaglog import cloudlog
 from openpilot.selfdrive.ui.sunnypilot.layouts.settings.display import OnroadBrightness
 from openpilot.sunnypilot.models.helpers import ACTIVE_BUNDLE_KEYS, get_active_source
 from openpilot.sunnypilot.sunnylink.sunnylink_state import SunnylinkState
@@ -209,6 +210,8 @@ class UIStateSP:
 
       # Alpha longitudinal: clear if not available
       if not CP.alphaLongitudinalAvailable:
+        cloudlog.warning({"event": "alphaLongRemoved", "reason": "alphaLongitudinalAvailable is false",
+                          "carFingerprint": str(CP.carFingerprint)})
         self.params.remove("AlphaLongitudinalEnabled")
 
       # BSM not available: clear BSM-dependent settings
@@ -218,6 +221,8 @@ class UIStateSP:
       # Clear car-dependent params only offroad. During first-drive initialization, card may
       # seed defaults before CarParamsPersistent is available.
       if not self.started:
+        cloudlog.warning({"event": "alphaLongRemoved", "reason": "UI has no CarParams yet and the device is not started",
+                          "carFingerprint": str(self.CP.carFingerprint) if self.CP is not None else None})
         self.params.remove("EnforceTorqueControl")
         self.params.remove("NeuralNetworkLateralControl")
         self.params.remove("LateralJerkTorqueController")
