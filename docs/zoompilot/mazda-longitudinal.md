@@ -522,6 +522,14 @@ The 2016-20 CX-9 is the one Mazda whose radar does not put the 0x361 to 0x366 tr
 so its platform config claims no radar bus; claiming one would leave radard waiting on a parser
 that never goes valid.
 
+## Engagement and the EPS
+
+Engagement never follows the EPS. The port trusts the platform table: no Mazda is dashcam-only,
+and an EPS mismatch only downgrades capabilities - the 45 kph speed floor, the slower actuator
+delay, the stock panda envelope, and no alpha long. The stock pre-2022 EPS still locks steering
+out after about 5 s hands-off at speed; that residual risk is accepted on listed platforms, and
+an onroad hands-off warning is the candidate remedy if it shows up in practice.
+
 ## Alpha-long availability rule
 
 Alpha long follows the EPS, not the model: it needs an EPS that can hold the wheel through a
