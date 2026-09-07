@@ -572,11 +572,47 @@ The 2016-20 CX-9 is the one Mazda whose radar does not put the 0x361 to 0x366 tr
 so its platform config claims no radar bus; claiming one would leave radard waiting on a parser
 that never goes valid.
 
+## Foreign radar and vision-only lead
+
+A carried-forward platform bundle can claim a radar bus the physical car cannot fill. The support
+case behind this rule: a 2016 KE body with the 2022 EPS swapped in, held on the CX-5 2022 platform
+by a bundle that carried forward. Its G46L radar answers the firmware query but never puts the
+0x361 to 0x366 tracks on bus 0. Parsing that bus left radard waiting on a parser that never went
+valid: radarTracks stayed empty and the device raised commIssue through a whole drive.
+
+The rule: `radarUnavailable` is true when the platform's DBC claims no radar bus, or when the
+detected radar is the G46L — the one radar known never to publish 0x361-0x366 on bus 0. The check
+strips trailing nulls before matching, because the UDS query returns a padded field and the padding
+length once masked an exact match. Any other radar keeps the platform's word: an unlisted newer
+revision of a working radar must not silently lose its tracks (per review, the first draft instead
+treated unlisted firmware as track-less, which a `K131-67XK2-G` on a 2022 CX-5 would have hit).
+Vision stands in for the G46L's lead, the way the 2016-20 CX-9 already runs. `mazdaRadarVerdict`
+logs the verdict at debug level; the radar firmware itself rides in CarParams.carFw.
+
+The KE platform (2012-16 CX-5, including the 2016.5 refresh) is the chassis this hardware comes
+from. It claims no radar bus and lists no EPS firmware on purpose: these bodies commonly run 2022
+EPS swaps, and the swap firmware belongs to MAZDA_CX5_2022 and `STEER_TO_ZERO_EPS_FW`, not the
+chassis. `platform_from_vin` (WMI, chassis code, year code) resolves the platform from the VIN, and
+a bundle that disagrees logs `platformBundleVinMismatch` instead of silently winning.
+
+Verified on the road with the swapped car (short-drive rlog, dongle d057d702, build e9b94b2):
+flags GEN1, STEER_TO_ZERO_EPS and G46L_RADAR set, radarUnavailable true, 1081 radarTracks messages
+where the broken build had zero, radarState valid from 108.6 s, and commIssue gone except the
+normal two-second boot warmup while modeld loads.
+
+### The G46L dialect
+
+The G46L is the one foreign radar whose dialect the teardown can replay: `create_radar_frames`
+carries a `g46l` flag and replays the G46L's own track and CRZ_INFO templates. Replaying the 2022
+captures at a gen1 body and its FSC camera is camera-fault territory, so the teardown must speak
+the radar's own dialect, not the 2022's.
+
 ## Alpha-long availability rule
 
 Alpha long follows the EPS, not the model: it needs an EPS that can hold the wheel through a
 stop, so any Mazda carrying the 2022 CX-5 EPS (`MazdaFlags.STEER_TO_ZERO_EPS`) with a radar bus
-may try it. A stock older EPS cuts lateral below 45 kph, so stop-and-go would run unsteered. The
+may try it, and so may a car whose detected radar is the G46L, the one foreign radar whose own
+replay exists (mazdacan.py). A stock older EPS cuts lateral below 45 kph, so stop-and-go would run unsteered. The
 CX-5 2022 is the car every engaged-mode constant was measured on. The CX-9 2021 was checked to
 share the wire format (route 00000004: identical CRZ_INFO checksum and rates over 54k frames,
 radar UDS at 0x764, same FSC camera firmware GSH7-67XK2-U); the other GEN1 platforms share the
