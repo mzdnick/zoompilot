@@ -217,8 +217,10 @@ class ModularAssistiveDrivingSystem:
     # Mazda: the dash LKA button has no CAN bit, and the camera's LANE_LINES re-enable
     # can flicker past the producer's two-frame debounce. invalidLkasSetting is the
     # system's own undebounced read of the same camera state, so its clearing edge IS
-    # the button's on-press: treat it exactly like the button event.
-    if (self.CP.brand == "mazda" and not CS.invalidLkasSetting and self.selfdrive.CS_prev.invalidLkasSetting and
+    # the button's on-press: treat it exactly like the button event. A declared TJA
+    # button owns lateral alone, so the LKAS state is not an enable path on those cars.
+    if (self.CP.brand == "mazda" and not self.button_owns_lateral and
+            not CS.invalidLkasSetting and self.selfdrive.CS_prev.invalidLkasSetting and
             (CS.cruiseState.available or self.allow_always) and not self.enabled):
       self.events_sp.add(EventNameSP.lkasEnable)
       self.lkas_button_request_frames = LKAS_BUTTON_REQUEST_FRAMES

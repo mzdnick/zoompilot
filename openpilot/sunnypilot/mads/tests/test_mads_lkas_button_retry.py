@@ -8,6 +8,7 @@ from types import SimpleNamespace
 from unittest import mock
 
 from opendbc.car import structs
+from opendbc.sunnypilot.car.mazda.values import MazdaFlagsSP
 from openpilot.cereal import custom, log
 from openpilot.sunnypilot.mads.mads import ModularAssistiveDrivingSystem
 from openpilot.selfdrive.selfdrived.events import Events
@@ -20,13 +21,13 @@ ButtonType = structs.CarState.ButtonEvent.Type
 
 
 class TestLkasButtonRetry:
-  def _mads(self):
+  def _mads(self, tja_button=False):
     events, events_sp = Events(), EventsSP()
     sm = mock.MagicMock()
     sm.__getitem__.return_value = []
     selfdrive = SimpleNamespace(
       CP=SimpleNamespace(brand="mazda", flags=0, passive=False),
-      CP_SP=SimpleNamespace(flags=0), params=mock.MagicMock(),
+      CP_SP=SimpleNamespace(flags=MazdaFlagsSP.TJA_BUTTON if tja_button else 0), params=mock.MagicMock(),
       events=events, events_sp=events_sp, enabled=True, enabled_prev=True,
       initialized=True, sm=sm,
       CS_prev=SimpleNamespace(cruiseState=SimpleNamespace(available=True), gasPressed=False,
@@ -98,6 +99,19 @@ class TestLkasButtonRetry:
       self._frame(mads, events, events_sp, press=False, no_entry=False, lka_off=True)
     assert mads.state_machine.state == State.disabled
     assert not events_sp.has(EventNameSP.lkasEnable)
+
+  def test_a_declared_tja_button_owns_the_lka_enable_path(self):
+    # upstream contract: with the TJA button declared, the LKAS state is not a lateral
+    # enable path — only the button event itself engages
+    mads, events, events_sp = self._mads(tja_button=True)
+    self._frame(mads, events, events_sp, press=False, no_entry=False, lka_off=True)
+    assert mads.state_machine.state == State.disabled
+    self._frame(mads, events, events_sp, press=False, no_entry=False, lka_off=False)
+    assert mads.state_machine.state == State.disabled
+    assert not events_sp.has(EventNameSP.lkasEnable)
+    # the declared button's own press still engages
+    self._frame(mads, events, events_sp, press=True, no_entry=False, lka_off=False)
+    assert mads.state_machine.state == State.enabled
 
   def test_panda_denial_drops_lateral_softly(self):
     # route 9ff65375--e27af563a8 t+209-211: a wheel cancel disengages the selfdrive,
