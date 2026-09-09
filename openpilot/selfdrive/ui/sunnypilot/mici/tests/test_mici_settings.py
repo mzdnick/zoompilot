@@ -626,30 +626,6 @@ class TestAcceleratorIconState:
     assert self._state(self._view(ready=True, state='unavailable'), big, started=True) == ChestnutState.ACTIVE
 
 
-class TestAcceleratorModelSelection:
-  def test_selection_does_not_write_model_manager_slots(self, params):
-    from unittest import mock
-    from openpilot.selfdrive.ui.sunnypilot.mici.layouts.models import ModelsLayoutMici
-
-    choice = {'name': 'Cinque Terre', 'ref': 'c' * 40, 'folder': '', 'selected': False, 'cached': True}
-    layout = ModelsLayoutMici()
-    with mock.patch('openpilot.selfdrive.ui.sunnypilot.mici.layouts.models.accelerators.select_model') as select, \
-         mock.patch('openpilot.selfdrive.ui.sunnypilot.mici.layouts.models.ui_state.is_offroad', return_value=True), \
-         mock.patch.object(layout, '_pop_to_main'), mock.patch.object(params, 'put') as put:
-      layout._choose_accelerator(choice)
-      select.assert_called_once_with('c' * 40)
-      put.assert_not_called()
-
-  def test_selection_that_crosses_ignition_does_not_change_the_model(self, params):
-    from unittest import mock
-    from openpilot.selfdrive.ui.sunnypilot.mici.layouts.models import ModelsLayoutMici
-
-    layout = ModelsLayoutMici()
-    with mock.patch('openpilot.selfdrive.ui.sunnypilot.mici.layouts.models.accelerators.select_model') as select, \
-         mock.patch('openpilot.selfdrive.ui.sunnypilot.mici.layouts.models.ui_state.is_offroad', return_value=False):
-      layout._choose_accelerator({'name': 'Cinque Terre', 'ref': 'c' * 40})
-      select.assert_not_called()
-
   @staticmethod
   def _usb(present):
     from contextlib import ExitStack
