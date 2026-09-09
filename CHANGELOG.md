@@ -1,3 +1,25 @@
+zoompilot Version 2026.003.000 (2026-09-09)
+========================
+* What's Changed (zoompilot/zoompilot)
+  * mazda: alpha longitudinal, cruise arbiter and alpha long toggle
+  * mazda: KE platform, foreign-radar vision-only, car picker fix
+  * mazda: speed dependent torque tune (v2) with EPS steer limit
+  * mazda: set speed integrity and speed limit assist (ICBM)
+  * mazda: curve speed planning from the model and the map
+  * mazda: TJA button on the camera press, first-engagement hold
+  * mazda: quieter non-delivery alert, panda rejection recovery
+  * mads: lateral switch on a trim-optional MADS button
+  * controls: bespoke lane change smoothing, replacing StarPilot lane smoothing
+  * models: Firehose Model as the default driving model
+  * locationd: speed-bin cache keyed on the TOML seed version
+  * ui: mici settings layouts, widgets and screenshot tests
+  * modeld: every driver camera compiled into the prebuilt
+  * agnos: comma three boot image built in CI, kernel via submodule, hardened tooling, gzipped image (#11, #13, #14, #15)
+  * ci: prebuilt release workflow and self hosted runner
+  * tools: Mazda log analysis and replay scripts
+* Synced from sunnypilot
+  * sunnypilot 2026.003.000, openpilot and sunnypilot changes through sunnypilot PR #1983
+
 sunnypilot Version 2026.002.000 (2026-06-28)
 ========================
 * What's Changed (sunnypilot/sunnypilot)
