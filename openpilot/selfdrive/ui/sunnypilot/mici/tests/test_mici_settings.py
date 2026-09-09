@@ -10,6 +10,7 @@ See the LICENSE.md file in the root directory for more details.
 import os
 
 import pytest
+from unittest import mock
 
 os.environ["BIG"] = "0"
 os.environ.setdefault("SCALE", "1")
@@ -581,7 +582,7 @@ class TestAcceleratorIconState:
   @staticmethod
   def _view(present=True, ready=False, progress=None, state='none'):
     from openpilot.selfdrive.ui.sunnypilot.ui_state import AcceleratorView
-    return AcceleratorView(present, ready, progress, True, state)
+    return AcceleratorView(present, ready, progress, state)
 
   def _state(self, view, sm=None, started=False):
     from openpilot.selfdrive.ui.ui_state import ui_state
@@ -784,14 +785,15 @@ class TestAcceleratorLinkToggle:
     from openpilot.system.ui.lib.application import MousePos
 
     params.remove(self.PARAM)
-    params.put("ModelRunnerTypeCache", 1)
     toggle = AcceleratorLinkToggle()
     assert not toggle._checked
-    toggle._handle_mouse_release(MousePos(0, 0))
-    assert params.get(self.PARAM) is True
-    assert params.get("ModelRunnerTypeCache") is None, "the link decides which modeld manager runs"
-    toggle._handle_mouse_release(MousePos(0, 0))
-    assert params.get(self.PARAM) is False
+    # the small model is the model manager's: the toggle never touches the runner cache
+    with mock.patch.object(params, "remove", wraps=params.remove) as remove:
+      toggle._handle_mouse_release(MousePos(0, 0))
+      assert params.get(self.PARAM) is True
+      toggle._handle_mouse_release(MousePos(0, 0))
+      assert params.get(self.PARAM) is False
+    assert "ModelRunnerTypeCache" not in {c.args[0] for c in remove.call_args_list}
 
   def test_refresh_follows_the_param(self, params):
     from openpilot.selfdrive.ui.sunnypilot.mici.layouts.models import AcceleratorLinkToggle
