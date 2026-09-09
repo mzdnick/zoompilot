@@ -631,13 +631,13 @@ class TestAcceleratorModelSelection:
     from unittest import mock
     from openpilot.selfdrive.ui.sunnypilot.mici.layouts.models import ModelsLayoutMici
 
-    choice = {'name': 'Cinque Terre', 'selected': False, 'cached': True}
+    choice = {'name': 'Cinque Terre', 'ref': 'c' * 40, 'folder': '', 'selected': False, 'cached': True}
     layout = ModelsLayoutMici()
     with mock.patch('openpilot.selfdrive.ui.sunnypilot.mici.layouts.models.accelerators.select_model') as select, \
          mock.patch('openpilot.selfdrive.ui.sunnypilot.mici.layouts.models.ui_state.is_offroad', return_value=True), \
          mock.patch.object(layout, '_pop_to_main'), mock.patch.object(params, 'put') as put:
       layout._choose_accelerator(choice)
-      select.assert_called_once_with('Cinque Terre')
+      select.assert_called_once_with('c' * 40)
       put.assert_not_called()
 
   def test_selection_that_crosses_ignition_does_not_change_the_model(self, params):
@@ -647,7 +647,7 @@ class TestAcceleratorModelSelection:
     layout = ModelsLayoutMici()
     with mock.patch('openpilot.selfdrive.ui.sunnypilot.mici.layouts.models.accelerators.select_model') as select, \
          mock.patch('openpilot.selfdrive.ui.sunnypilot.mici.layouts.models.ui_state.is_offroad', return_value=False):
-      layout._choose_accelerator({'name': 'Cinque Terre'})
+      layout._choose_accelerator({'name': 'Cinque Terre', 'ref': 'c' * 40})
       select.assert_not_called()
 
   @staticmethod
