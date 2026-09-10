@@ -24,8 +24,13 @@ The radar does not implement COMMUNICATION_CONTROL (0x28 replies NRC 0x11), so u
 `disable_ecu()` cannot be used. A DIAGNOSTIC_SESSION_CONTROL request for the programming
 session (`02 10 02`) stops all of its periodic frames. The radar stays silent as long as tester
 present (`02 3e 80`) keeps arriving at 2 Hz and falls back to the default session on its S3
-timeout (about 5 s) otherwise. The programming session disables AEB while it is in effect, so,
-like every `disable_ecu` caller, the port only starts a silencing episode pre-motion.
+timeout (about 5 s) otherwise. The programming session disables AEB while it is in effect. The
+port starts a silencing episode pre-motion on every radar but the one in `MOVING_TAKEOVER_RADAR_FW`
+(the validation vehicle's, on-car validation pending), where a fresh session started with the
+car rolling (forced offroad exit, process restart) may request it at speed; see
+`force-offroad-alpha-transition.md`. Comma's own `disable_ecu()` runs at `CI.init()` at whatever
+speed the car is at, so the moving request itself has upstream precedent; what does not is this
+radar's answer to it, which is the on-car question.
 
 The radar answers every session request within about 10 ms. Route 000000fe t+15.0: request
 `02 10 02`, positive response `06 50 02` carrying P2* = 5.0 s, which is the S3 timeout. Because
@@ -80,6 +85,19 @@ disengage first. Adopting a radar that is already quiet without having silenced 
 restart after a takeover) disables nothing and may proceed anywhere, but "quiet" there is the
 full guard window (`STOCK_RADAR_GUARD_T`), not the 50 ms alive window; see the gap census below.
 
+The manager reports where ownership stands through the stock ECU transition contract
+(`opendbc/sunnypilot/car/stock_ecu.py`, one state: starting, parkToTakeOver, stockCruiseOn,
+ready, restoring, restored, failed), which card publishes on `carStateSP.zoompilot.stockEcu`
+for the UI's status line and the engage-press alert. A moving request that the radar refuses
+or never answers, or a radar heard again under our frames, closes moving attempts for the
+session and leaves the parked attempt open (`moving_closed`); a parked refusal is definitive
+for the drive. Undoing our own unanswered request (motion on a parked-only radar, a refusal)
+latches nothing; only the lifecycle's ordered hand-back keeps the radar stock, and only while
+the request stands (`handback_ordered`). Route 0000020d, the
+forced-offroad exit at 113 km/h on 2026-09-10, is the case the contract was built on: the
+session sat in STOCK for 115 s with nothing on screen while the driver engaged stock MRCC three
+times looking for cruise.
+
 A radar heard again while SILENCED is an S3 recovery (tester present not landing for 5 s) or a
 radar that was never really silenced. Two masters is the hazard, so the synthetic frames stop
 either way. The session request is gated exactly like the first teardown, because it disables
@@ -100,14 +118,18 @@ request (`handback_completed`). A hand-back the radar never answers is a failure
 not cycle on it, and a late recovery can still complete it. The toggle monitor reads the
 manager's result through card; it no longer infers "stock radar heard" from accFaulted.
 
-Every other software stop goes through the same hand-back, brokered by
-`stock_ecu_handback.py`. hardwared holds `OnroadCycleRequested` (calibration reset,
-restart-needed toggles) and the UI's `OffroadModeRequested` (forced offroad), and manager holds
-`DoReboot` / `DoShutdown` / `DoUninstall`, each by setting `StockEcuHandBackRequested` and waiting
-for card's `StockEcuHandBackDone` (15 s bound, then the stop goes ahead). Forced offroad needs
-the request param because pandad reads `OffroadMode` itself and drops the panda's ignition
-within 100 ms of the write, before any hand-back could run; sunnylink's remote `OffroadMode`
-write still bypasses this. These stops are served moving or not, since they happen either way.
+Every software stop goes through the same hand-back, brokered by `stock_ecu_handback.py` as one
+correlated request/result pair (`StockEcuHandBackRequest` `{id}`, `StockEcuHandBackResult`
+`{id, outcome}`). hardwared holds `OnroadCycleRequested` (calibration reset, restart-needed
+toggles) and `OffroadModeRequested` (forced offroad), manager holds `DoReboot` / `DoShutdown` / `DoUninstall`; a second consumer joins an
+open request. Voluntary stops proceed only on restored or notNeeded and stay open and visible on
+failed (neutral replacement traffic continues, a late recovery completes them, the user can
+withdraw); mandatory stops proceed on any answer; either proceeds after 15 s with no answer at
+all. `OffroadMode` is written by hardwared alone, because pandad reads it and drops the panda's
+ignition within 100 ms; remote writes are blocked and the sunnylink toggle is bound to the
+request param. These stops are served moving or not, since they happen either way: route 0000020c
+handed the radar back at 117.7 km/h in 0.63 s (request 569.566, `06 50 01` 569.572, stock
+traffic 569.652, restored 569.756) with no fault bit and no degraded-radar signature afterwards.
 Ignition off and power loss cannot be held: the radar recovers through S3 on its own.
 
 Once a hand-back has run to completion the radar stays stock for the rest of the process
