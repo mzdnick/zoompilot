@@ -11,11 +11,20 @@ from opendbc.car import structs
 from opendbc.car.chrysler.values import RAM_DT
 from opendbc.car.mazda.values import MazdaFlags
 from openpilot.selfdrive.selfdrived.events import Events
+from openpilot.sunnypilot.mads.mads import SET_SPEED_BUTTONS
 from openpilot.sunnypilot.selfdrive.selfdrived.events import EventsSP
 
 EventName = log.OnroadEvent.EventName
 EventNameSP = custom.OnroadEventSP.EventName
 GearShifter = structs.CarState.GearShifter
+StockEcuState = custom.CarStateZP.StockEcuState
+
+# A SET/RES press before the stock ECU openpilot stands in for is owned lands on a body that
+# will not engage. Name what the driver has to do instead of leaving the press unanswered
+# (Mazda route 0000020d: six main presses and stock MRCC engaged under a takeover that was
+# waiting for a stop, nothing shown). Alert-only; the press itself does nothing.
+STOCK_ECU_NOT_READY = (StockEcuState.starting, StockEcuState.parkToTakeOver, StockEcuState.stockCruiseOn,
+                       StockEcuState.restoring, StockEcuState.restored, StockEcuState.failed)
 
 
 class CarSpecificEventsSP:
@@ -25,7 +34,7 @@ class CarSpecificEventsSP:
 
     self.low_speed_alert = False
 
-  def update(self, CS: structs.CarState, events: Events):
+  def update(self, CS: structs.CarState, events: Events, CS_SP=None):
     events_sp = EventsSP()
 
     if self.CP.brand == 'chrysler':
@@ -65,4 +74,13 @@ class CarSpecificEventsSP:
         events.remove(EventName.stockLkas)
         events_sp.add(EventNameSP.mazdaStockCtsActive)
 
+    if CS_SP is not None and CS.buttonEvents and self.stock_ecu_not_ready(CS, CS_SP.zoompilot.stockEcu):
+      events_sp.add(EventNameSP.stockEcuNotReady)
+
     return events_sp
+
+  @staticmethod
+  def stock_ecu_not_ready(CS: structs.CarState, stock_ecu) -> bool:
+    """An engage press while the stock ECU is not owned, or owned with the driver's main off."""
+    pressed = any(be.pressed and be.type in SET_SPEED_BUTTONS for be in CS.buttonEvents)
+    return pressed and (stock_ecu in STOCK_ECU_NOT_READY or (stock_ecu == StockEcuState.ready and not CS.cruiseState.available))

@@ -35,6 +35,11 @@ class DeveloperLayoutSP(DeveloperLayout):
     for item in self.items:
       self._scroller.add_widget(item)
 
+    # the switch is the saved preference (offroad-only); this line is the running session's mode
+    alpha_desc = self._alpha_long_toggle.description
+    self._alpha_long_toggle.set_description(
+      lambda: alpha_desc + (f"<br><br><b>{tr('Status')}: {ui_state.alpha_long_status}</b>" if ui_state.alpha_long_status else ""))
+
   def _initialize_items(self):
     self.show_advanced_controls = toggle_item_sp(tr("Show Advanced Controls"),
                                                  tr("Toggle visibility of advanced zoompilot controls.<br>This only changes the visibility of the toggles; " +

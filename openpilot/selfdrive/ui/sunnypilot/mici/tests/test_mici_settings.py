@@ -586,3 +586,40 @@ class TestLayoutsSurviveRender:
     from openpilot.selfdrive.ui.sunnypilot.mici.layouts.home import MiciHomeLayoutSP
 
     render(MiciHomeLayoutSP())
+
+
+
+class TestAlphaLongStatusMici:
+  """The alpha toggle's subtitle is the running session's mode; the switch itself is the
+  saved preference and only editable offroad (forced offroad included)."""
+
+  def test_subtitle_follows_the_published_status(self, params, monkeypatch):
+    from openpilot.selfdrive.ui.sunnypilot.mici.layouts.developer import DeveloperLayoutMiciSP
+    from openpilot.selfdrive.ui.ui_state import ui_state
+    layout = DeveloperLayoutMiciSP()
+    for text in ("initializing", "ready", "failed", ""):
+      monkeypatch.setattr(ui_state, "alpha_long_status", text)
+      render(layout)
+      assert layout._alpha_long_toggle.value == text
+
+  def test_switch_is_offroad_only(self, params, monkeypatch):
+    from openpilot.selfdrive.ui.sunnypilot.mici.layouts.developer import DeveloperLayoutMiciSP
+    from openpilot.selfdrive.ui.ui_state import ui_state
+    layout = DeveloperLayoutMiciSP()
+    monkeypatch.setattr(ui_state, "started", True)
+    render(layout)
+    assert not layout._alpha_long_toggle.enabled
+    monkeypatch.setattr(ui_state, "started", False)  # naturally offroad or forced offroad
+    render(layout)
+    assert layout._alpha_long_toggle.enabled
+
+  def test_force_offroad_writes_the_preference_only(self, params, monkeypatch):
+    from openpilot.selfdrive.ui.sunnypilot.mici.layouts.settings import SettingsLayoutSP
+    from openpilot.system.ui.lib.application import gui_app
+    layout = SettingsLayoutSP()
+    pushed = []
+    monkeypatch.setattr(gui_app, "push_widget", lambda w: pushed.append(w))
+    layout._handle_always_offroad(True)
+    pushed[-1]._confirm_callback()
+    assert wait_for_param(params, "OffroadModeRequested") is True
+    assert not params.get_bool("OffroadMode")  # applied by hardwared, never the UI

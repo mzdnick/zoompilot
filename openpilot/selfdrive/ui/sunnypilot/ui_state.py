@@ -10,6 +10,7 @@ from openpilot.cereal import messaging, log, custom
 from opendbc.car.structs import car
 from openpilot.common.params import Params
 from openpilot.selfdrive.ui.sunnypilot.layouts.settings.display import OnroadBrightness
+from openpilot.selfdrive.ui.sunnypilot.longitudinal_status import alpha_long_status
 from openpilot.sunnypilot.models.helpers import ACTIVE_BUNDLE_KEYS, get_active_source
 from openpilot.sunnypilot.sunnylink.sunnylink_state import SunnylinkState
 from openpilot.system.ui.lib.application import gui_app
@@ -63,6 +64,7 @@ class UIStateSP:
     self.enforce_torque_control: bool = False
     self.custom_torque_params: bool = False
     self.torque_override_enabled: bool = False
+    self.alpha_long_status: str = ""
     self._sp_initialized: bool = False
 
   def update(self) -> None:
@@ -70,6 +72,15 @@ class UIStateSP:
       self.sunnylink_state.start()
     else:
       self.sunnylink_state.stop()
+    self.update_alpha_long_status()
+
+  def update_alpha_long_status(self) -> None:
+    """The stock ECU status card publishes on carStateSP, as the alpha toggle's status line."""
+    sm = self.sm
+    fresh = self.started and sm.alive["carStateSP"] and sm.recv_frame["carStateSP"] > self.started_frame
+    stock_ecu = str(sm["carStateSP"].zoompilot.stockEcu) if fresh else None
+    applied = self.CP is not None and self.CP.openpilotLongitudinalControl
+    self.alpha_long_status = alpha_long_status(self.started, applied, stock_ecu)
 
   def onroad_brightness_handle_alerts(self, _ui_state, alert):
     if _ui_state.sm.recv_frame["carState"] < _ui_state.started_frame:
@@ -246,13 +257,10 @@ class UIStateSP:
 
 
 def set_always_offroad(params: Params, enable: bool) -> None:
-  """Entering is brokered by hardwared (OffroadModeRequested) so a silenced stock ECU is handed
-  back before pandad sees OffroadMode; exiting clears both."""
-  if enable:
-    params.put_bool("OffroadModeRequested", True)
-  else:
-    params.put_bool("OffroadMode", False)
-    params.put_bool("OffroadModeRequested", False)
+  """The UI writes the forced-offroad preference only. hardwared applies it: entering waits for
+  a silenced stock ECU to be handed back before pandad sees OffroadMode, exiting clears the old
+  session's CarParams first so the fresh session sequences like a boot."""
+  params.put_bool("OffroadModeRequested", enable)
 
 
 class DeviceSP:
@@ -274,9 +282,10 @@ class DeviceSP:
     else:
       self.dismiss_screensaver(_ui_state)
 
-    # blocked runs every frame, so write only when actually sleeping
+    # blocked runs every frame, so write only when actually sleeping; ignition is off here,
+    # so hardwared applies the preference at once
     if _ui_state.boot_offroad_mode == 1 and not on and not self._blocked_by_screensaver:
-      _ui_state.params.put_bool("OffroadMode", True)
+      _ui_state.params.put_bool("OffroadModeRequested", True)
 
   def dismiss_screensaver(self, _ui_state) -> None:
     if gui_app.get_active_widget() == _ui_state.screensaver:
