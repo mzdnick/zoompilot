@@ -20,6 +20,7 @@ class CardExt:
   def __init__(self, CP: structs.CarParams, CP_SP: structs.CarParamsSP, params: Params, sm, v_cruise_helper, CI) -> None:
     self.sm = sm
     self.v_cruise_helper = v_cruise_helper
+    self.CI = CI
     # onroad AlphaLongitudinalEnabled changes: sequence any ECU hand-back, then cycle. The
     # session manager's own result is the acknowledgment, not a driver-facing fault bit.
     stock_ecu_session = CI.CC.radar_session if CP.brand == "mazda" and CP.openpilotLongitudinalControl else None
@@ -32,6 +33,13 @@ class CardExt:
     helper.reconcile_setpoint_with_dash(CS)
     # publish the arbiter's session (plannerd mirrors it; the ICBM servo freezes on a prompt)
     helper.cruise_arbiter.fill_msg(CS_SP)
+
+  def fill_cylinder_deactivation(self, CS_SP) -> None:
+    # The Mazda port computes the cylinder mode from MORE_GAS; publish it next to
+    # cruiseSession the same way. Normal on cars that never leave the all-cylinder mode.
+    cyl = CS_SP.zoompilot.cylinderDeactivation
+    cyl.state = self.CI.CS.cyl_deact_state
+    cyl.entryProgress = float(self.CI.CS.cyl_entry_progress)
 
   def controls_update(self, CS, CC, CC_SP: structs.CarControlSP) -> structs.CarControlSP:
     """Runs just before CI.apply on the converted CarControlSP struct, which it may edit."""
