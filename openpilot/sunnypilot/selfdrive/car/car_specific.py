@@ -23,8 +23,7 @@ StockEcuState = custom.CarStateZP.StockEcuState
 # will not engage. Name what the driver has to do instead of leaving the press unanswered
 # (Mazda route 0000020d: six main presses and stock MRCC engaged under a takeover that was
 # waiting for a stop, nothing shown). Alert-only; the press itself does nothing.
-STOCK_ECU_NOT_READY = (StockEcuState.starting, StockEcuState.parkToTakeOver, StockEcuState.stockCruiseOn,
-                       StockEcuState.restoring, StockEcuState.failed)
+STOCK_ECU_NO_ALERT = (StockEcuState.notNeeded, StockEcuState.ready)
 
 
 class CarSpecificEventsSP:
@@ -34,7 +33,7 @@ class CarSpecificEventsSP:
 
     self.low_speed_alert = False
 
-  def update(self, CS: structs.CarState, events: Events, CS_SP=None):
+  def update(self, CS: structs.CarState, events: Events, CS_SP):
     events_sp = EventsSP()
 
     if self.CP.brand == 'chrysler':
@@ -74,13 +73,7 @@ class CarSpecificEventsSP:
         events.remove(EventName.stockLkas)
         events_sp.add(EventNameSP.mazdaStockCtsActive)
 
-    if CS_SP is not None and CS.buttonEvents and self.stock_ecu_not_ready(CS, CS_SP.zoompilot.stockEcu):
+    if CS_SP.zoompilot.stockEcu not in STOCK_ECU_NO_ALERT and any(be.pressed and be.type in SET_SPEED_BUTTONS for be in CS.buttonEvents):
       events_sp.add(EventNameSP.stockEcuNotReady)
 
     return events_sp
-
-  @staticmethod
-  def stock_ecu_not_ready(CS: structs.CarState, stock_ecu) -> bool:
-    """An engage press while openpilot does not own the stock ECU it stands in for. Cruise main
-    off is the car's own state, shown on its own cluster, and is left to it."""
-    return stock_ecu in STOCK_ECU_NOT_READY and any(be.pressed and be.type in SET_SPEED_BUTTONS for be in CS.buttonEvents)

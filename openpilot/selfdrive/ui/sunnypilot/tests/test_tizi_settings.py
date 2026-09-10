@@ -36,11 +36,12 @@ def test_alpha_toggle_description_and_enable(gui, monkeypatch):
   ui_state.params = Params()
   ui_state.update_params()
   layout = DeveloperLayoutSP()
-  desc = layout._alpha_long_toggle._description
   monkeypatch.setattr(ui_state, "alpha_long_status", "ready")
-  assert "Status: ready" in desc()
+  layout._update_state()
+  assert "Status: ready" in layout._alpha_long_toggle.description
   monkeypatch.setattr(ui_state, "alpha_long_status", "")
-  assert "Status" not in desc()
+  layout._update_state()
+  assert "Status" not in layout._alpha_long_toggle.description
   monkeypatch.setattr(ui_state, "started", True)
   assert not layout._alpha_long_toggle.action_item.enabled
   monkeypatch.setattr(ui_state, "started", False)

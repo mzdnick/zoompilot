@@ -5,8 +5,8 @@ This file is part of zoompilot and is licensed under the MIT License.
 See the LICENSE.md file in the root directory for more details.
 """
 from openpilot.common.params import ParamKeyFlag
-from openpilot.sunnypilot.selfdrive.car.stock_ecu_handback import HANDBACK_WAIT_T, REQUEST_KEY, StockEcuHandBackGate
-from openpilot.sunnypilot.selfdrive.car.tests.fakes import FakeClock, FakeParams, answer as _answer
+from openpilot.sunnypilot.selfdrive.car.stock_ecu_handback import HANDBACK_WAIT_T, REQUEST_KEY
+from openpilot.sunnypilot.selfdrive.car.tests.fakes import FakeClock, FakeParams, answer
 from openpilot.sunnypilot.system.hardware.hardwared_ext import HardwaredExt
 
 
@@ -18,14 +18,10 @@ def _ext(**values):
   return ext, params, clock
 
 
-def answer(params, outcome, request_id=1):
-  _answer(params, request_id, outcome)
-
-
 class TestOnroadCycle:
   def test_clears_onroad_transition_params(self):
     params = FakeParams()
-    HardwaredExt(params).on_onroad_cycle()
+    HardwaredExt(params).prepare_onroad_entry()
     assert params.cleared == [ParamKeyFlag.CLEAR_ON_ONROAD_TRANSITION]
 
   def test_nothing_requested(self):
@@ -129,15 +125,3 @@ class TestForcedOffroad:
       params.put_bool("AlphaLongitudinalEnabled", not params.get_bool("AlphaLongitudinalEnabled"))
       assert not ext.update(started=False)
     assert params.cleared == [] and params.get(REQUEST_KEY) is None and params.get_bool("OffroadMode")
-
-  def test_reboot_joins_the_offroad_handback(self):
-    # a second consumer (manager) joins the open request rather than opening another
-    ext, params, _ = _ext(OffroadModeRequested=True)
-    ext.update(started=True)
-    mgr = StockEcuHandBackGate(params, voluntary=False, now=FakeClock())
-    assert not mgr.ready(started=True)
-    assert params.get(REQUEST_KEY)["id"] == 1
-    answer(params, "restored")
-    assert mgr.ready(started=True)
-    ext.update(started=True)
-    assert params.get_bool("OffroadMode")

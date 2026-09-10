@@ -550,9 +550,15 @@ struct CarStateZP @0xc879af11c43cb400 {
     stockCruiseOn @3;
     ready @4;
     restoring @5;
-    failed @6;
+    restored @6;
+    failed @7;
   }
 
+  # The card-side cruise arbiter's session, published at carState rate. On non-pcm
+  # cars this is the authoritative SLA session: plannerd mirrors it into
+  # longitudinalPlanSP.speedLimit.assist for the UI, and the ICBM servo freezes while
+  # a confirm prompt is pending. announceCounter lets 20 Hz consumers see 100 Hz
+  # alert-worthy transitions without sampling loss.
   struct CruiseSession {
     state @0 :LongitudinalPlanSP.SpeedLimit.AssistState;
     # plan cap in m/s: the session target while active, the frozen hold while

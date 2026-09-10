@@ -29,7 +29,7 @@ class HardwaredExt:
 
   def __init__(self, params: Params) -> None:
     self.params = params
-    self.handback = StockEcuHandBackGate(params, voluntary=False)
+    self.handback = StockEcuHandBackGate(params)
 
   def update(self, started: bool) -> bool:
     cycle = self.params.get_bool("OnroadCycleRequested")
@@ -43,19 +43,15 @@ class HardwaredExt:
       return False
     # forced offroad has an exit button to withdraw it, so it may hold on a failed hand-back;
     # a cycle has no cancel and proceeds on any answer, like a reboot
-    self.handback.voluntary = enter
-    if not self.handback.ready(started):
+    if not self.handback.ready(started, hold_on_failure=enter):
       return False
     if enter:
       cloudlog.warning("entering forced offroad")
       self.params.put_bool("OffroadMode", True, block=True)
     if cycle:
       self.params.put_bool("OnroadCycleRequested", False, block=True)
-      self.on_onroad_cycle()
+      self.prepare_onroad_entry()
     return cycle
-
-  def on_onroad_cycle(self) -> None:
-    self.prepare_onroad_entry()
 
   def on_offroad_exit(self) -> None:
     cloudlog.warning("leaving forced offroad")

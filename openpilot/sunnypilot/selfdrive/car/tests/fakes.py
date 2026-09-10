@@ -34,7 +34,7 @@ class FakeParams:
     self.cleared.append(flag)
 
 
-def answer(params, request_id, outcome):
+def answer(params, outcome, request_id=1):
   """card's hand-back result for a request id, as the consumer gates read it."""
   params.put("StockEcuHandBackResult", {"id": request_id, "outcome": str(outcome)})
 

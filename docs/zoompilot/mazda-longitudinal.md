@@ -25,9 +25,9 @@ The radar does not implement COMMUNICATION_CONTROL (0x28 replies NRC 0x11), so u
 session (`02 10 02`) stops all of its periodic frames. The radar stays silent as long as tester
 present (`02 3e 80`) keeps arriving at 2 Hz and falls back to the default session on its S3
 timeout (about 5 s) otherwise. The programming session disables AEB while it is in effect. The
-port starts a silencing episode pre-motion on every radar but the one in `MOVING_TAKEOVER_RADAR_FW`
-(the validation vehicle's, on-car validation pending), where a fresh session started with the
-car rolling (forced offroad exit, process restart) may request it at speed; see
+port starts a silencing episode pre-motion unless the developer has set `MazdaMovingTakeover`
+(off by default, on-car validation pending), where a fresh session started with the car
+rolling (forced offroad exit, process restart) may request it at speed; see
 `force-offroad-alpha-transition.md`. Comma's own `disable_ecu()` runs at `CI.init()` at whatever
 speed the car is at, so the moving request itself has upstream precedent; what does not is this
 radar's answer to it, which is the on-car question.
@@ -87,13 +87,13 @@ full guard window (`STOCK_RADAR_GUARD_T`), not the 50 ms alive window; see the g
 
 The manager reports where ownership stands through the stock ECU transition contract
 (`opendbc/sunnypilot/car/stock_ecu.py`, one state: starting, parkToTakeOver, stockCruiseOn,
-ready, restoring, failed), which card publishes on `carStateSP.zoompilot.stockEcu`
+ready, restoring, restored, failed), which card publishes on `carStateSP.zoompilot.stockEcu`
 for the UI's status line and the engage-press alert. A moving request that the radar refuses
 or never answers, or a radar heard again under our frames, closes moving attempts for the
-session and leaves the parked attempt open (`moving_closed`); a parked refusal is definitive
+session and leaves the parked attempt open (`moving_open`); a parked refusal is definitive
 for the drive. Undoing our own unanswered request (motion on a parked-only radar, a refusal)
 latches nothing; only the lifecycle's ordered hand-back keeps the radar stock, and only while
-the request stands (`handback_ordered`). Route 0000020d, the
+the request stands. Route 0000020d, the
 forced-offroad exit at 113 km/h on 2026-09-10, is the case the contract was built on: the
 session sat in STOCK for 115 s with nothing on screen while the driver engaged stock MRCC three
 times looking for cruise.

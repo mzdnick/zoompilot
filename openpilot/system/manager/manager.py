@@ -41,10 +41,8 @@ def manager_init() -> None:
 
   # device boot mode
   if params.get("DeviceBootMode") == 1:  # start in Always Offroad mode
-    # hardwared applies the preference once it runs; the direct write covers pandad's first
-    # reads before that, since it takes OffroadMode straight from params
+    # the preference; hardwared applies it on its first loop, before it can go onroad
     params.put_bool("OffroadModeRequested", True, block=True)
-    params.put_bool("OffroadMode", True, block=True)
 
   # quick boot
   if params.get_bool("QuickBootToggle") and not PC:
@@ -144,8 +142,8 @@ def manager_thread() -> None:
 
   started_prev = False
   ignition_prev = False
-  # a mandatory stop: proceeds on any hand-back answer, or after the bound with none
-  stop_gate = StockEcuHandBackGate(params, voluntary=False)
+  # a stop with no cancel: proceeds on any hand-back answer, or after the bound with none
+  stop_gate = StockEcuHandBackGate(params)
 
   while True:
     sm.update(1000)

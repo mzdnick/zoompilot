@@ -84,7 +84,7 @@ class UIStateSP:
     applied = self.started and self.CP is not None and self.CP.openpilotLongitudinalControl
     fresh = applied and sm.alive["carStateSP"] and sm.recv_frame["carStateSP"] > self.started_frame
     stock_ecu = str(sm["carStateSP"].zoompilot.stockEcu) if fresh else None
-    self.alpha_long_status = "" if not applied else tr("ready") if stock_ecu == "ready" else tr("failed") if stock_ecu == "failed" else tr("initializing")
+    self.alpha_long_status = tr({"ready": "ready", "failed": "failed"}.get(stock_ecu, "initializing")) if applied else ""
 
   def onroad_brightness_handle_alerts(self, _ui_state, alert):
     if _ui_state.sm.recv_frame["carState"] < _ui_state.started_frame:

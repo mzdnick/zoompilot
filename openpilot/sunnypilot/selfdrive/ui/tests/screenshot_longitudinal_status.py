@@ -25,28 +25,6 @@ os.environ["BIG"] = "1" if BIG else "0"  # screenshot_layouts pins the mici UI a
 STATES = ("initializing", "ready", "failed")
 
 
-def capture(widget, filename: str, frames=20):
-  # screenshot_layouts.capture resets the scroller's position filter, which undoes the scroll
-  # to the alpha toggle below; a plain render-to-texture keeps it
-  from openpilot.system.ui.lib.application import gui_app
-  rt = rl.load_render_texture(gui_app.width, gui_app.height)
-  rect = rl.Rectangle(0, 0, gui_app.width, gui_app.height)
-  for _ in range(frames):
-    rl.begin_texture_mode(rt)
-    rl.clear_background(rl.BLACK)
-    widget.render(rect)
-    rl.end_texture_mode()
-    rl.begin_drawing()
-    rl.end_drawing()
-  image = rl.load_image_from_texture(rt.texture)
-  rl.image_flip_vertical(image)
-  screenshot_layouts.OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
-  rl.export_image(image, str(screenshot_layouts.OUTPUT_DIR / filename))
-  rl.unload_image(image)
-  rl.unload_render_texture(rt)
-  print(f"  {filename}")
-
-
 def main():
   screenshot_layouts.OUTPUT_DIR = Path(__file__).parent / "screenshots" / ("tizi" if BIG else "mici")
   with OpenpilotPrefix():
@@ -72,12 +50,12 @@ def main():
       from openpilot.selfdrive.ui.sunnypilot.mici.layouts.developer import DeveloperLayoutMiciSP
       dev = DeveloperLayoutMiciSP()
       dev.show_event()
-      capture(dev, "_layout.png", frames=2)
+      screenshot_layouts.capture(dev, "_layout.png", frames=2)
       dev._scroller.scroll_to(dev._alpha_long_toggle.rect.x - dev._scroller.rect.x - 40)
       item = dev
     for text in STATES:
       ui_state.alpha_long_status = text
-      capture(item, f"alpha_long_{text}.png")
+      screenshot_layouts.capture(item, f"alpha_long_{text}.png", keep_scroll=True)
     (screenshot_layouts.OUTPUT_DIR / "_layout.png").unlink(missing_ok=True)
     gui_app.close()
   return 0

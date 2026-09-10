@@ -36,9 +36,8 @@ class DeveloperLayoutSP(DeveloperLayout):
       self._scroller.add_widget(item)
 
     # the switch is the saved preference (offroad-only); this line is the running session's mode
-    alpha_desc = self._alpha_long_toggle.description
-    self._alpha_long_toggle.set_description(
-      lambda: alpha_desc + (f"<br><br><b>{tr('Status')}: {ui_state.alpha_long_status}</b>" if ui_state.alpha_long_status else ""))
+    self._alpha_long_desc = self._alpha_long_toggle.description
+    self._alpha_long_status_shown: str | None = None
 
   def _initialize_items(self):
     self.show_advanced_controls = toggle_item_sp(tr("Show Advanced Controls"),
@@ -90,6 +89,11 @@ class DeveloperLayoutSP(DeveloperLayout):
     gui_app.push_widget(dialog)
 
   def _update_state(self):
+    status = ui_state.alpha_long_status
+    if status != self._alpha_long_status_shown:
+      self._alpha_long_status_shown = status
+      self._alpha_long_toggle.set_description(self._alpha_long_desc + (f"<br><br><b>{tr('Status')}: {status}</b>" if status else ""))
+
     disable_updates = ui_state.params.get_bool("DisableUpdates")
     show_advanced = ui_state.params.get_bool("ShowAdvancedControls")
 

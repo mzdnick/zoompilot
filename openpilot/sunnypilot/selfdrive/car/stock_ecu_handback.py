@@ -17,21 +17,20 @@ Consumer (`StockEcuHandBackGate`, in hardwared and manager): writes StockEcuHand
 {id} and holds its action until StockEcuHandBackResult carries the same id. A second consumer
 arriving while one request is open joins it, so exactly one hand-back is ever in flight.
 Producer (`StockEcuHandBackServer`, in card): asserts the brand's hand-back off the control loop
-while the request stands and writes the result with the vehicle's outcome: restored, failed or
-notNeeded. Ids are monotonic past every record on file
-and both records clear on the offroad transition, so a stale answer never satisfies a new
-request, and a withdrawn request (the record removed) is a fresh start for the vehicle.
+while the request stands and writes the result with the vehicle's StockEcuState once it is one
+of restored, failed or notNeeded. Ids are monotonic past every record on file and both records
+clear on the offroad transition, so a stale answer never satisfies a new request, and a
+withdrawn request (the record removed) is a fresh start for the vehicle.
 
-Outcomes: a voluntary stop (cycle, forced offroad) proceeds only on restored or notNeeded; on
-failed it stays open (the vehicle keeps neutral replacement traffic going, a late recovery still
-completes it, the user can withdraw). A mandatory stop (reboot, shutdown, uninstall) proceeds on
-any answer. Either kind proceeds after HANDBACK_WAIT_T with no answer at all, which means no
-card is alive to give one. Ignition off and power loss cannot be held.
+A stop that can be withdrawn (forced offroad, through its exit button) proceeds only on
+restored or notNeeded and stays open on failed: the vehicle keeps neutral replacement traffic
+going and a late recovery still completes it. A stop with no cancel (cycle, reboot, shutdown,
+uninstall) proceeds on any answer. Either proceeds after HANDBACK_WAIT_T with no answer at all,
+which means no card is alive to give one. Ignition off and power loss cannot be held.
 """
 import time
-from enum import StrEnum
 
-from opendbc.sunnypilot.car.stock_ecu import StockEcuStatus
+from opendbc.sunnypilot.car.stock_ecu import StockEcuState
 from openpilot.common.params import Params
 from openpilot.common.swaglog import cloudlog
 
@@ -42,15 +41,8 @@ RESULT_KEY = "StockEcuHandBackResult"
 # answer at all the processes are assumed dead, and the stop goes ahead regardless.
 HANDBACK_WAIT_T = 15.0
 
-
-
-class HandBackOutcome(StrEnum):
-  NOT_NEEDED = "notNeeded"
-  RESTORED = "restored"
-  FAILED = "failed"
-
-
-SETTLED = (HandBackOutcome.RESTORED, HandBackOutcome.NOT_NEEDED)
+SETTLED = (StockEcuState.RESTORED, StockEcuState.NOT_NEEDED)
+ANSWERS = (*SETTLED, StockEcuState.FAILED)
 
 
 def read_record(params: Params, key: str) -> dict | None:
@@ -61,9 +53,8 @@ def read_record(params: Params, key: str) -> dict | None:
 class StockEcuHandBackGate:
   """Consumer side. Call ready() every loop while the stop is wanted, reset() if it is withdrawn."""
 
-  def __init__(self, params: Params, voluntary: bool, now=time.monotonic) -> None:
+  def __init__(self, params: Params, now=time.monotonic) -> None:
     self.params = params
-    self.voluntary = voluntary
     self.now = now
     self.request_id: int | None = None
     self.requested_ts: float | None = None
@@ -84,15 +75,16 @@ class StockEcuHandBackGate:
       self.request_id = max([rec["id"] for rec in (existing, result) if rec is not None] + [0]) + 1
       self.params.put(REQUEST_KEY, {"id": self.request_id}, block=True)
     self.requested_ts = self.now()
-    self.failed = False
     cloudlog.warning(f"stock ECU hand-back {self.request_id} requested before ending onroad")
 
   def _close(self) -> None:
     self.request_id = None
     self.requested_ts = None
+    self.failed = False
 
-  def ready(self, started: bool) -> bool:
-    """True when the caller may end the onroad state now; the wait is cleared with it."""
+  def ready(self, started: bool, hold_on_failure: bool = False) -> bool:
+    """True when the caller may end the onroad state now; the wait is cleared with it.
+    hold_on_failure: the stop can be withdrawn, so a failed hand-back holds it open."""
     if not started:
       self._close()
       return True
@@ -105,11 +97,11 @@ class StockEcuHandBackGate:
       if outcome in SETTLED:
         self._close()
         return True
-      if outcome == HandBackOutcome.FAILED:
+      if outcome == StockEcuState.FAILED:
         if not self.failed:
           cloudlog.error(f"stock ECU hand-back {self.request_id} failed")
         self.failed = True
-        if not self.voluntary:
+        if not hold_on_failure:
           self._close()
           return True
         return False  # held open; a late recovery or a withdrawal ends it
@@ -126,40 +118,38 @@ class StockEcuHandBackGate:
       if existing is not None and existing["id"] == self.request_id:
         self.params.remove(REQUEST_KEY)
     self._close()
-    self.failed = False
 
 
 class StockEcuHandBackServer:
-  """Producer side, on card's control loop. `status` is the controller's StockEcuStatus
-  (opendbc/sunnypilot/car/stock_ecu.py), or None on a platform that silences nothing."""
+  """Producer side, on card's control loop."""
 
-  def __init__(self, params: Params, status: StockEcuStatus | None) -> None:
+  def __init__(self, params: Params) -> None:
     self.params = params
-    self.status = status
     self.request: dict | None = None
     self.started = False       # asserted once: held for as long as the request stands
-    self.answered: tuple[int, HandBackOutcome] | None = None
+    self.answered: tuple[int, StockEcuState] | None = None
 
   def update_params(self) -> None:
     # rides card's 10 Hz params thread
     self.request = read_record(self.params, REQUEST_KEY)
 
-  def _answer(self, request_id: int, outcome: HandBackOutcome) -> None:
+  def _answer(self, request_id: int, outcome: StockEcuState) -> None:
     if self.answered == (request_id, outcome):
       return
     self.params.put(RESULT_KEY, {"id": request_id, "outcome": str(outcome)})
     self.answered = (request_id, outcome)
-    (cloudlog.error if outcome == HandBackOutcome.FAILED else cloudlog.warning)(f"stock ECU hand-back {request_id} answered {outcome}")
+    (cloudlog.error if outcome == StockEcuState.FAILED else cloudlog.warning)(f"stock ECU hand-back {request_id} answered {outcome}")
 
-  def update(self, enabled: bool, CC_SP) -> None:
-    """Runs at 100 Hz before CI.apply. CC_SP is rebuilt every frame, so the assert is re-applied
-    here; the session manager treats a dropped assert as a withdrawal."""
+  def update(self, enabled: bool, state: StockEcuState, CC_SP) -> None:
+    """Runs at 100 Hz before CI.apply with the controller's stock ECU state. CC_SP is rebuilt
+    every frame, so the assert is re-applied here; the session manager treats a dropped assert
+    as a withdrawal."""
     if self.request is None:
       self.started = False
       return
     request_id = self.request["id"]
-    if self.status is None:
-      self._answer(request_id, HandBackOutcome.NOT_NEEDED)
+    if state == StockEcuState.NOT_NEEDED:
+      self._answer(request_id, state)
       return
     # Never start on an engaged car: the hand-back revokes availability under the driver.
     # Once started it runs to its end.
@@ -167,7 +157,5 @@ class StockEcuHandBackServer:
       return
     self.started = True
     CC_SP.stockEcuHandBack = True
-    if self.status.handback_completed:
-      self._answer(request_id, HandBackOutcome.RESTORED)
-    elif self.status.handback_failed:
-      self._answer(request_id, HandBackOutcome.FAILED)
+    if state in ANSWERS:
+      self._answer(request_id, state)

@@ -21,29 +21,14 @@ import argparse
 import sys
 from pathlib import Path
 
-from opendbc.car import structs
 from opendbc.car.mazda.interface import CarInterface
 from opendbc.car.mazda.tests.conftest import car_control, car_control_sp, LongCtrlState
 from opendbc.car.mazda.values import CAR, MazdaFlags
 from openpilot.tools.lib.logreader import LogReader
 
 
-def carparams_from_log(msgs):
-  for m in msgs:
-    if m.which() == "carParams":
-      return m.carParams
-  return None
-
-
 def build_interface(cp_log, moving_takeover: bool) -> CarInterface:
-  fw = []
-  for f in cp_log.carFw:
-    entry = structs.CarParams.CarFw()
-    entry.ecu = f.ecu
-    entry.address = f.address
-    entry.subAddress = f.subAddress
-    entry.fwVersion = f.fwVersion
-    fw.append(entry)
+  fw = list(cp_log.carFw)  # structs.CarParams is the capnp CarParams; _get_params reads ecu and fwVersion only
   candidate = CAR(cp_log.carFingerprint)
   fingerprint = {b: {} for b in range(4)}
   CP = CarInterface.get_params(candidate, fingerprint, fw, alpha_long=True, is_release=False, docs=False)
@@ -87,14 +72,14 @@ def replay(route_dirs: list[Path], moving_takeover: bool, to_s: float | None):
     CI.CC.frame += 1
     frames += 1
     mgr = CI.CC.radar_session
-    status = CI.CC.stock_ecu_status
+    status = CI.CC.stock_ecu_state
     if mgr.state != last_state:
       events.append((t, f"session {last_state} -> {mgr.state}  v={CS.vEgo * 3.6:5.1f} km/h  fsc={CI.CS.fsc_settled} " +
                         f"stockCruise={CI.CS.cruise_enabled} radarAlive={CI.CS.stock_radar_alive} programmingSent={mgr.programming_sent}"))
       last_state = mgr.state
-    if status.state != last_status:
-      events.append((t, f"status {status.state}  v={CS.vEgo * 3.6:5.1f} km/h"))
-      last_status = status.state
+    if status != last_status:
+      events.append((t, f"status {status}  v={CS.vEgo * 3.6:5.1f} km/h"))
+      last_status = status
     if mgr.diagnostic_message is not None and mgr.diagnostic_message.dat[1] == 0x10:
       events.append((t, f"TX 0x764 {mgr.diagnostic_message.dat[:3].hex()}  v={CS.vEgo * 3.6:5.1f} km/h"))
   print(f"  frames={frames} fingerprint={cp_log.carFingerprint if cp_log else None} " +

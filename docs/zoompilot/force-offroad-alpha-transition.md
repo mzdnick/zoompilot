@@ -56,31 +56,34 @@ of mode is the explicit developer workflow.
 
 ### Vehicle transition contract
 
-`opendbc/sunnypilot/car/stock_ecu.py`: `StockEcuStatus(state, handback_completed,
-handback_failed)`, updated in place by the session manager every control frame. States, the
-driver's view: notNeeded, starting, parkToTakeOver, stockCruiseOn, ready, restoring, failed. `ready` is carstate's own silence guard on the owned radar (`radar_owned`), never the
-session acknowledgement. A controller that silences a stock ECU under openpilot longitudinal
-carries `stock_ecu_status`; card reads that one name and nothing brand-specific (`card_ext.py`)
-and publishes the state on `carStateSP.zoompilot.stockEcu`. The detailed reasons (camera
-settle, CAN, which UDS reply) stay in carlog.
+`opendbc/sunnypilot/car/stock_ecu.py`: one `StockEcuState`, the driver's view, kept by the
+session manager every control frame: notNeeded, starting, parkToTakeOver, stockCruiseOn,
+ready, restoring, restored, failed. `ready` is carstate's own silence guard on the owned radar
+(`radar_owned`), never the session acknowledgement. A controller that silences a stock ECU
+under openpilot longitudinal exposes `stock_ecu_state`; card reads that one name and nothing
+brand-specific (`card_ext.py`) and publishes it on `carStateSP.zoompilot.stockEcu`. The
+detailed reasons (camera settle, CAN, which UDS reply) stay in carlog.
 
 ### Moving takeover (Mazda)
 
 `RadarSessionManager(moving_takeover=...)`: the first takeover of a session may run while moving
-when `MazdaFlags.MOVING_TAKEOVER` is set. The flag comes from `MOVING_TAKEOVER_RADAR_FW` in
-`values.py`, a per-radar-firmware allowlist that holds only the validation vehicle's radar
-(`K131-67XK2-F`) and is meant to grow one measured firmware at a time, never by dialect. Rules:
+when `MazdaFlags.MOVING_TAKEOVER` is set. The flag comes from the developer's
+`MazdaMovingTakeover` param, read at fingerprint next to `MazdaTjaButton`
+(`opendbc/sunnypilot/car/interfaces.py`), off by default. A radar-firmware rule was
+considered and rejected for now: the validation vehicle's radar firmware is in the fingerprints
+of three platforms, so it would have enabled an unvalidated moving takeover for every car with
+that radar. Once a moving handover is on record, the firmware rule can replace the param. Rules:
 
 - A refusal or timeout of a **moving** request, or a radar heard again under our frames (S3
-  recovery), closes moving attempts for the session (`moving_closed`, status
-  `parkToTakeOver`) and leaves the parked attempt open; a refusal at a stop is definitive for
-  the drive. One moving attempt per session.
+  recovery), closes moving attempts for the session (`moving_open`, status `parkToTakeOver`)
+  and leaves the parked attempt open; a refusal at a stop is definitive for the drive. One
+  moving attempt per session.
 - A parked attempt carries on if the car pulls away on a capable radar; on any other radar
   motion undoes the queued request with a default-session request, as before.
 - Only the lifecycle's ordered hand-back keeps the radar stock, and only while the request
-  stands (`handback_ordered`); a withdrawn request is a fresh start under the normal takeover
-  gate. Undoing our own unanswered or refused request latches nothing. Before this, a
-  takeover aborted by motion blocked every later attempt in the session.
+  stands; a withdrawn request is a fresh start under the normal takeover gate. Undoing our
+  own unanswered or refused request latches nothing. Before this, a takeover aborted by
+  motion blocked every later attempt in the session.
 
 Upstream precedent: comma's `disable_ecu()` runs at `CI.init()` at whatever speed the car is at
 after a manager restart; no upstream port gates the radar disable on standstill. The reason this
@@ -90,7 +93,8 @@ covers, and the unattended S3 recovery on the way out, which the ordered hand-ba
 ### Lifecycle records
 
 `StockEcuHandBackRequest` `{id}` and `StockEcuHandBackResult` `{id, outcome}` (JSON params,
-cleared on the offroad transition and at manager start) replace the two sticky booleans.
+cleared on the offroad transition and at manager start; the outcome is the StockEcuState name
+restored, failed or notNeeded) replace the two sticky booleans.
 Consumers (`StockEcuHandBackGate` in hardwared for cycle/offroad, in manager for
 reboot/shutdown/uninstall) open a request with a monotonic id and wait for the result that
 carries it; a second consumer joins an open request. Card's `StockEcuHandBackServer` asserts the
@@ -110,8 +114,7 @@ car, running to the end once started) and answers restored, failed or notNeeded 
 ### Force Offroad
 
 `OffroadModeRequested` is the preference (UI, remote settings, boot mode, screen sleep);
-`OffroadMode` is written by hardwared alone (plus manager's boot-mode write, which covers
-pandad's first reads before hardwared runs). Entering while onroad waits on the hand-back, then
+`OffroadMode` is written by hardwared alone. Entering while onroad waits on the hand-back, then
 pandad drops the panda's ignition. Exiting clears `CLEAR_ON_ONROAD_TRANSITION` (CarParams,
 ControlsReady, FirmwareQueryDone) **before** clearing `OffroadMode`, so pandad sequences the
 fresh session like a boot, ELM327 until the new CarParams is ready, instead of applying the old
@@ -183,8 +186,9 @@ the params transport; the UI tests monkeypatch the presentation inputs. The
 ### On-car, driver-coordinated (not done)
 
 On the test vehicle (CX-5 2022, radar K131-67XK2-F, FSC GSH7-67XK2-U, EPS KSD5-3210X-C-00),
-one drive with the device on this build, an rlog kept for each step, the driver ready to take
-over and the road empty ahead:
+one drive with the device on this build and `MazdaMovingTakeover` set to 1 (`Params().put_bool`
+over ssh; there is no UI for it), an rlog kept for each step, the driver ready to take over and
+the road empty ahead:
 
 1. Cold start in stock mode, drive, disengage everything, Force Offroad at speed, flip alpha on,
    exit. Expect "initializing", "taking over the radar", then "ready, turn on cruise main"
@@ -210,7 +214,7 @@ resets an ECU or presses a button on the driver's behalf.
 
 ## Supported configurations
 
-- Moving takeover: `MOVING_TAKEOVER_RADAR_FW` only (one radar, the validation vehicle, pending).
+- Moving takeover: only with `MazdaMovingTakeover` set by the developer (validation pending).
 - Moving hand-back (Force Offroad entry, cycle, reboot at speed): every alpha-long Mazda;
   on record at 117 km/h on the validation vehicle.
 - Every other Mazda alpha-long configuration: parked takeover at the next stop, with the
