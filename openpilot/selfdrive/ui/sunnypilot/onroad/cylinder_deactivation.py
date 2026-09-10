@@ -9,8 +9,6 @@ import time
 import pyray as rl
 
 from openpilot.cereal import custom
-from openpilot.system.ui.lib.application import gui_app, FontWeight
-from openpilot.system.ui.lib.text_measure import measure_text_cached
 
 # The element draws itself only while a state other than "all cylinders" is live, then
 # lingers and fades. Cars without deactivation hardware never leave normal, so the
@@ -18,23 +16,21 @@ from openpilot.system.ui.lib.text_measure import measure_text_cached
 VISIBLE_LINGER_S = 2.0
 FADE_S = 0.5
 
-PANEL_W = 104
-PANEL_H = 78
-PIP_W = 14
-PIP_H = 26
-PIP_GAP = 6
-PIP_ROW_W = 4 * PIP_W + 3 * PIP_GAP
-BAR_H = 5
+# Ring gauge in the lower-left corner of the road view: high enough to clear the
+# bottom developer UI strip (60 px) and the bottom-center torque bar arc.
+RING_INNER_R = 44.0
+RING_OUTER_R = 60.0
+CORNER_X = 125.0
+CORNER_Y = 125.0
+FUEL_CUT_GAP_DEG = 8.0
 
 STATE = custom.CarStateZP.CylinderDeactivation.State
 
-PIP_ACTIVE = rl.Color(0x4f, 0xd0, 0x84, 0xff)     # cylinder firing
-PIP_DIM = rl.Color(0x5d, 0x6b, 0x74, 0xff)        # cylinder idle (deactivation pending)
-PIP_OFF = rl.Color(0x53, 0x9f, 0xc7, 0xff)        # fuel cut outline
-BAR_FILL = rl.Color(0x4f, 0xd0, 0x84, 0xff)
-BAR_TRACK = rl.Color(0x2b, 0x31, 0x36, 0xff)
-PANEL_BG = rl.Color(0x14, 0x16, 0x18, 0xb4)
-PANEL_BORDER = rl.Color(0x40, 0x45, 0x4a, 0x66)
+RING_ACTIVE = rl.Color(0x4f, 0xd0, 0x84, 0xff)   # deactivation latched (two cylinders firing)
+RING_TRACK = rl.Color(0x5d, 0x6b, 0x74, 0x5a)    # gauge track during the entry ramp
+RING_CUT = rl.Color(0x53, 0x9f, 0xc7, 0xff)      # fuel cut: no cylinder fires
+BACKING_OUTER = rl.Color(0, 0, 0, 0x5a)
+BACKING_INNER = rl.Color(0, 0, 0, 0x78)
 
 
 def _alpha(color: rl.Color, a: int) -> rl.Color:
@@ -43,7 +39,6 @@ def _alpha(color: rl.Color, a: int) -> rl.Color:
 
 class CylinderDeactivationRenderer:
   def __init__(self):
-    self._font = gui_app.font(FontWeight.SEMI_BOLD)
     self._last_active_t = 0.0
 
   def render(self, rect: rl.Rectangle, sm) -> None:
@@ -61,52 +56,27 @@ class CylinderDeactivationRenderer:
       if since > VISIBLE_LINGER_S:
         a = int(255 * (1.0 - (since - VISIBLE_LINGER_S) / FADE_S))
 
-    x = rect.x + 30
-    y = rect.y + rect.height * 0.60
-    self._draw_panel(rl.Rectangle(x, y, PANEL_W, PANEL_H), a)
+    cx = int(rect.x + CORNER_X)
+    cy = int(rect.y + rect.height - CORNER_Y)
+    center = rl.Vector2(cx, cy)
 
-    pips_x = x + (PANEL_W - PIP_ROW_W) / 2
-    self._draw_pips(pips_x, y + 10, state, a)
+    # soft backing so the ring reads over bright road
+    rl.draw_circle(cx, cy, RING_OUTER_R + 16, _alpha(BACKING_OUTER, a))
+    rl.draw_circle(cx, cy, RING_OUTER_R + 6, _alpha(BACKING_INNER, a))
 
-    if state == STATE.entry:
-      self._draw_bar(pips_x, y + 42, float(cd.entryProgress), a)
-    self._draw_label(x, y + 52, state, a)
-
-  def _draw_panel(self, panel: rl.Rectangle, a: int) -> None:
-    rl.draw_rectangle_rounded(panel, 0.25, 8, _alpha(PANEL_BG, a))
-    rl.draw_rectangle_rounded_lines_ex(panel, 0.25, 8, 2, _alpha(PANEL_BORDER, a))
-
-  def _draw_pips(self, x: float, y: float, state, a: int) -> None:
-    for i in range(4):
-      pip = rl.Rectangle(x + i * (PIP_W + PIP_GAP), y, PIP_W, PIP_H)
-      if state == STATE.engineBraking:
-        # no cylinder fires during fuel cut
-        rl.draw_rectangle_lines(int(pip.x), int(pip.y), int(pip.width), int(pip.height), _alpha(PIP_OFF, a))
-      elif state == STATE.deactivated:
-        # a count of active cylinders, not a map of which ones
-        color = PIP_ACTIVE if i < 2 else PIP_DIM
-        rl.draw_rectangle_rec(pip, _alpha(color, a))
-      else:
-        # entry ramp: all four still fire until the latch; the normal linger shows them firing
-        color = PIP_DIM if state == STATE.entry else PIP_ACTIVE
-        rl.draw_rectangle_rec(pip, _alpha(color, a))
-
-  def _draw_bar(self, x: float, y: float, progress: float, a: int) -> None:
-    rl.draw_rectangle_rec(rl.Rectangle(x, y, PIP_ROW_W, BAR_H), _alpha(BAR_TRACK, a))
-    fill_w = PIP_ROW_W * max(0.0, min(1.0, progress))
-    if fill_w > 0:
-      rl.draw_rectangle_rec(rl.Rectangle(x, y, fill_w, BAR_H), _alpha(BAR_FILL, a))
-
-  def _draw_label(self, panel_x: float, y: float, state, a: int) -> None:
-    if state == STATE.entry:
-      text = "DEACT"
-    elif state == STATE.deactivated:
-      text = "2/4"
-    elif state == STATE.engineBraking:
-      text = "FUEL CUT"
+    if state == STATE.engineBraking:
+      # one dashed segment per cut cylinder
+      span = 360 / 4
+      for k in range(4):
+        a0 = -90 + k * span + FUEL_CUT_GAP_DEG
+        a1 = -90 + (k + 1) * span - FUEL_CUT_GAP_DEG
+        rl.draw_ring(center, RING_INNER_R, RING_OUTER_R, a0, a1, 24, _alpha(RING_CUT, a))
+    elif state == STATE.entry:
+      # the arc sweeps clockwise from 12 o'clock as the PCM confirmation ramp progresses
+      rl.draw_ring(center, RING_INNER_R, RING_OUTER_R, 0, 360, 64, _alpha(RING_TRACK, a))
+      sweep = 360 * max(0.0, min(1.0, float(cd.entryProgress)))
+      if sweep > 0:
+        rl.draw_ring(center, RING_INNER_R, RING_OUTER_R, -90, -90 + sweep, 64, _alpha(RING_ACTIVE, a))
     else:
-      return
-    size = 16
-    width = measure_text_cached(self._font, text, size).x
-    rl.draw_text_ex(self._font, text, rl.Vector2(panel_x + (PANEL_W - width) / 2, y), size, 0,
-                    _alpha(PIP_DIM, a))
+      # deactivated, and the full-ring linger while the return to normal fades out
+      rl.draw_ring(center, RING_INNER_R, RING_OUTER_R, 0, 360, 64, _alpha(RING_ACTIVE, a))
