@@ -43,9 +43,10 @@ class SettingsLayoutSP(OP.SettingsLayout):
     device_panel = DeviceLayoutMici()
     self._scroller._items[2].set_click_callback(lambda: gui_app.push_widget(device_panel))
 
-    # base order: toggles, network, device, software, ...
+    # by label: an index mis-wires silently if the base list is ever reordered
     software_panel = SoftwareLayoutSP()
-    self._scroller._items[3].set_click_callback(lambda: gui_app.push_widget(software_panel))
+    software_btn = next(btn for btn in self._scroller.items if btn.get_text() == "software")
+    software_btn.set_click_callback(lambda: gui_app.push_widget(software_panel))
 
     self.icon_offroad_enable = gui_app.texture("../../sunnypilot/selfdrive/assets/icons_mici/always_offroad.png", BIG_ICON_SIZE,
                                                BIG_ICON_SIZE)

@@ -5,9 +5,8 @@ This file is part of zoompilot and is licensed under the MIT License.
 See the LICENSE.md file in the root directory for more details.
 """
 from openpilot.selfdrive.ui.mici.layouts.offroad_alerts import MiciOffroadAlerts
+from openpilot.selfdrive.ui.mici.layouts.settings.software import _split_description
 from openpilot.selfdrive.ui.sunnypilot.mici.layouts.software import ReleaseNotesPage
-from openpilot.selfdrive.ui.ui_state import ui_state
-from openpilot.system.ui.lib.application import gui_app
 
 UPDATE_KEY = "UpdateAvailable"
 
@@ -22,27 +21,17 @@ class MiciOffroadAlertsSP(MiciOffroadAlerts):
     super().__init__()
 
     self._notes_page = ReleaseNotesPage()
-    for item in self.alert_items:
-      if item.alert_data.key == UPDATE_KEY:
-        item.set_click_callback(self._show_release_notes)
-
-  def _show_release_notes(self):
-    notes = ui_state.params.get("UpdaterNewReleaseNotes")
-    self._notes_page.set_notes((notes or b"").decode("utf-8", "replace").strip())
-    gui_app.push_widget(self._notes_page)
+    self._update_item = next(item for item in self.alert_items if item.alert_data.key == UPDATE_KEY)
+    self._update_item.set_click_callback(lambda: self._notes_page.show_notes(True))
 
   def _refresh(self, pending_params: dict) -> int:
     active_count = super()._refresh(pending_params)
 
-    for item in self.alert_items:
-      alert = item.alert_data
-      if alert.key != UPDATE_KEY or not alert.visible:
-        continue
-
-      # "version / branch / commit / date", the same fields upstream puts in the alert
-      desc = (pending_params.get("UpdaterNewDescription") or "").split(" / ")
-      version = f"\nzoompilot {desc[0]}, {desc[3]}\n" if len(desc) == 4 else ""
+    alert = self._update_item.alert_data
+    if alert.visible:
+      desc = _split_description(pending_params.get("UpdaterNewDescription") or "")
+      version = f"\nzoompilot {desc[0]}, {desc[3]}\n" if desc is not None else ""
       alert.text = f"Update ready{version}. Tap to read what's new."
-      item.update_alert_data(alert)
+      self._update_item.update_alert_data(alert)
 
     return active_count
