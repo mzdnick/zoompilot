@@ -508,6 +508,59 @@ class TestReleaseNotes:
     assert len(btn._page._content.elements) > 1
 
 
+class TestUpdateAlert:
+  """The alert is the only place a staged update announces itself, so it owns the notes flow."""
+
+  def _alerts(self, params, available=True):
+    from openpilot.selfdrive.ui.sunnypilot.mici.layouts.offroad_alerts import UPDATE_KEY, MiciOffroadAlertsSP
+
+    params.put("UpdaterNewDescription", "2026.09.07-13 / develop / 259190d / Sep 07", block=True)
+    params.put("UpdaterNewReleaseNotes", b"<h1>zoompilot v2026.09.07-13</h1>", block=True)
+    params.put_bool(UPDATE_KEY, available, block=True)
+
+    layout = MiciOffroadAlertsSP()
+    pending = {alert.key: params.get(alert.key) for alert in layout.sorted_alerts}
+    pending["UpdaterNewDescription"] = params.get("UpdaterNewDescription")
+    layout._refresh(pending)
+    return layout
+
+  def _update_item(self, layout):
+    from openpilot.selfdrive.ui.sunnypilot.mici.layouts.offroad_alerts import UPDATE_KEY
+
+    return next(item for item in layout.alert_items if item.alert_data.key == UPDATE_KEY)
+
+  def test_alert_points_at_the_notes(self, params):
+    item = self._update_item(self._alerts(params))
+    assert item.alert_data.visible
+    assert "zoompilot 2026.09.07-13, Sep 07" in item.alert_data.text
+    assert "blog.comma.ai" not in item.alert_data.text
+    # the item re-split the new text, so the card knows how tall it has to be
+    assert item._body_text == "Tap to read what's new."
+
+  def test_no_alert_without_an_update(self, params):
+    item = self._update_item(self._alerts(params, available=False))
+    assert not item.alert_data.visible
+    assert item.alert_data.text == ""
+
+  def test_click_opens_the_new_notes(self, params):
+    layout = self._alerts(params)
+    layout._show_release_notes()
+    assert "zoompilot v2026.09.07-13" in [e.content for e in layout._notes_page._content.elements]
+
+  def test_install_slider_follows_the_staged_update(self, params):
+    from openpilot.selfdrive.ui.sunnypilot.mici.layouts.software import ReleaseNotesPage
+
+    page = ReleaseNotesPage()
+    params.put_bool("UpdateAvailable", True, block=True)
+    assert page._install.is_visible
+    render(page)  # the slider only has a rect once the page lays it out under the notes
+    assert page._install.rect.height > 0
+
+    params.put_bool("UpdateAvailable", False, block=True)
+    assert not page._install.is_visible
+    render(page)
+
+
 class TestLayoutsSurviveRender:
   """Post-sync guard. A layout that imports and updates cleanly can still crash on draw."""
 
