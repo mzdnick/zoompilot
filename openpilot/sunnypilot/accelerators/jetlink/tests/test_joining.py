@@ -176,13 +176,14 @@ class JoiningTest(unittest.TestCase):
     s = self._state()
     self.addCleanup(booted.set)
     self.assertFalse(s.big_model_available)
+    self.assertEqual(s.big_model_state, 'joining', 'nothing to swap in yet')
     self.assertEqual(self._run(s), {'from': 'small'})
     booted.set()
     self._wait_joined(s)
     self.assertTrue(s.big_model_available)
     self.assertEqual(self._run(s), {'from': 'small'})
     self.assertTrue(s.loading)
-    self.assertEqual(s.big_model_state, 'joining')
+    self.assertEqual(s.big_model_state, 'ready')
     s._engaged = False
     self.assertEqual(self._run(s), {'from': 'big'})
     self.assertFalse(s.big_model_available)
@@ -362,9 +363,11 @@ class JoiningTest(unittest.TestCase):
     # modelV2.big turning true and the UI reads acceleratorState
     s = self._state()
     self.assertTrue(s.loading)
-    self.assertEqual(s.big_model_state, 'joining')
 
     self._wait_joined(s)
+    # up and only a swap window away, which the icon draws steady rather than
+    # pulsing "loading" for the rest of a drive with no stop in it
+    self.assertEqual(s.big_model_state, 'ready')
     s._engaged = False
     self._run(s)
     self.assertFalse(s.loading)

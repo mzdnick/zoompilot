@@ -45,7 +45,7 @@ AcceleratorState = custom.ModelDataV2SP.AcceleratorState
 # than filtered out
 INIT = 'selfdriveInitializing'
 
-SERVICES = ['modelV2', 'modelDataV2SP', 'controlsState', 'deviceState', 'lateralManeuverPlan', 'alertDebug']
+SERVICES = ['modelV2', 'modelDataV2SP', 'carState', 'controlsState', 'deviceState', 'lateralManeuverPlan', 'alertDebug']
 
 
 def make_selfdrived(chestnut_present: bool, enabled: bool) -> SelfdriveD:
@@ -56,7 +56,7 @@ def make_selfdrived(chestnut_present: bool, enabled: bool) -> SelfdriveD:
   """
   sd = SelfdriveD.__new__(SelfdriveD)
   sd.sm = messaging.SubMaster(SERVICES)
-  for service in ('modelV2', 'modelDataV2SP', 'deviceState'):
+  for service in ('modelV2', 'modelDataV2SP', 'carState', 'deviceState'):
     sd.sm.data[service] = sd.sm[service].as_builder()
     sd.sm.valid[service] = True
   sd.sm.seen['deviceState'] = sd.sm.alive['deviceState'] = True
@@ -75,7 +75,7 @@ def make_selfdrived(chestnut_present: bool, enabled: bool) -> SelfdriveD:
 
 class TraceTest(unittest.TestCase):
   def step(self, loading=False, active=None, big=False, alive=True,
-           state=AcceleratorState.none, available=False) -> tuple[list[str], list[str]]:
+           state=AcceleratorState.none, available=False, standstill=False) -> tuple[list[str], list[str]]:
     """One update_events, and everything it raised."""
     sd = self.sd
     sd.params.get_bool.return_value = loading
@@ -88,6 +88,8 @@ class TraceTest(unittest.TestCase):
     sd.sm['modelV2'].big = big
     sd.sm['modelDataV2SP'].acceleratorState = state
     sd.sm['modelDataV2SP'].bigModelAvailable = available
+    sd.sm.seen['carState'] = sd.sm.alive['carState'] = True
+    sd.sm['carState'].standstill = standstill
     sd.update_events(SimpleNamespace())
     return ([EVENT_NAME[n] for n in sd.events.names], [EVENT_NAME_SP[n] for n in sd.events_sp.names])
 
@@ -162,6 +164,24 @@ class JetlinkTrace(TraceTest):
     # And it comes back, which a chestnut never does.
     self.assertEqual(self.step(state=AcceleratorState.running, big=True), ([INIT], ['bigModelReady']))
     self.sd.enabled = True
+    self.assertEqual(self.step(state=AcceleratorState.running, big=True), ([INIT], []))
+
+  def test_the_offer_repeats_at_every_stop(self):
+    # On a MADS car latActive is true whenever the car is moving, so the window
+    # only opens at a standstill. One three second alert ten minutes before the
+    # driver can act on it is not guidance, and "waited for the green icon,
+    # never turned off the car" is what came of it.
+    waiting = {'state': AcceleratorState.ready, 'available': True}
+    self.assertEqual(self.step(**waiting), ([INIT], ['bigModelAvailable']))
+    for _ in range(5):
+      self.assertEqual(self.step(**waiting), ([INIT], []))
+    self.assertEqual(self.step(**waiting, standstill=True), ([INIT], ['bigModelAvailable']))
+    # not again while it is still stopped, and again at the next stop
+    self.assertEqual(self.step(**waiting, standstill=True), ([INIT], []))
+    self.assertEqual(self.step(**waiting), ([INIT], []))
+    self.assertEqual(self.step(**waiting, standstill=True), ([INIT], ['bigModelAvailable']))
+    # and nothing at all once it is driving
+    self.assertEqual(self.step(state=AcceleratorState.running, big=True, standstill=True), ([INIT], ['bigModelReady']))
     self.assertEqual(self.step(state=AcceleratorState.running, big=True), ([INIT], []))
 
   def test_a_link_that_drops_while_disengaged_says_nothing(self):

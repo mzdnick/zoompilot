@@ -32,10 +32,11 @@ def default_model_name(source: str) -> str:
 
 
 def big_model_state() -> str | None:
-  """'failed' | 'loading' | None, from the same state the icons render."""
+  """'failed' | 'loading' | 'ready' | None, from the same state the icons render."""
   return {ChestnutState.UNCOMPILED: 'failed',
           ChestnutState.FAILED: 'failed',
-          ChestnutState.LOADING: 'loading'}.get(ui_state.chestnut_state)
+          ChestnutState.LOADING: 'loading',
+          ChestnutState.WAITING: 'ready'}.get(ui_state.chestnut_state)
 
 
 def big_model_progress() -> tuple[str, float, str] | None:

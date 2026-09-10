@@ -288,10 +288,12 @@ EVENTS_SP: dict[int, dict[str, Alert | AlertCallbackType]] = {
       Priority.LOW, VisualAlert.none, AudibleAlert.prompt, 0.1),
   },
 
+  # what the window actually is, since "disengage" is not it on a MADS car:
+  # latActive is true whenever the car is moving with lateral on
   EventNameSP.bigModelAvailable: {
     ET.PERMANENT: Alert(
       "Model Available" if IS_MICI else "Big Model Available",
-      "Disengage to switch",
+      "Stop with cruise off,\nor turn lateral off",
       AlertStatus.normal, AlertSize.mid,
       Priority.LOW, VisualAlert.none, AudibleAlert.prompt, 3.),
   },

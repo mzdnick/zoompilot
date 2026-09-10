@@ -500,6 +500,7 @@ struct ModelDataV2SP @0xa1680744031fdb2d {
     running @2;
     retrying @3;
     unavailable @4;
+    ready @5;      # link up, engine loaded, waiting for a window to switch
   }
 
   enum TurnDirection {

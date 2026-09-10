@@ -265,6 +265,9 @@ class ModelsLayout(Widget):
       if big_is_default:
         return tr("{} drives until the big model is ready.").format(fallback_name)
       return tr("Getting the big model ready.")
+    if state == 'ready':
+      # the swap window, not the model, is what is missing now
+      return tr("{} is ready. Stop with cruise off, or turn lateral off, to switch.").format(big_name)
     if accelerator and not ui_state.accelerator_view.ready:
       return tr("{} will drive when the accelerator is ready.").format(big_name)
     if big_is_default:

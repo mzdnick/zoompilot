@@ -108,6 +108,10 @@ class UIStateSP:
     # attached, a pending join is loading, not a failed model
     if view.state in ('joining', 'retrying') or not model_seen:
       return ChestnutState.LOADING
+    # the engine is up and only the swap window is missing, which on a MADS car
+    # is the rest of the drive unless the driver stops
+    if view.state == 'ready':
+      return ChestnutState.WAITING
     if not view.ready:
       return ChestnutState.UNCOMPILED
     if view.state == 'running':

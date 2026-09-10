@@ -22,6 +22,7 @@ class AcceleratorEvents:
     self.big_model_available = False
     self.big_model_running = False
     self.link_lost = False
+    self.standstill = False
 
   def update(self, sm: messaging.SubMaster, enabled: bool, events: Events, events_sp: EventsSP) -> None:
     status = sm['modelDataV2SP']
@@ -29,9 +30,15 @@ class AcceleratorEvents:
     # stale status does not rearm the chime; only a fresh unavailable state does
     if all(sm.seen[s] and sm.alive[s] and sm.valid[s] for s in ('modelV2', 'modelDataV2SP')):
       available = status.bigModelAvailable and not sm['modelV2'].big
-      if available and not self.big_model_available:
+      # once when it turns up, and again at every stop while it is still
+      # waiting. On a MADS car latActive is true whenever the car is moving, so
+      # the window only opens at a standstill: one three second alert ten
+      # minutes before the driver can act on it is not guidance
+      stopped = bool(sm.alive['carState'] and sm['carState'].standstill)
+      if available and (not self.big_model_available or (stopped and not self.standstill)):
         events_sp.add(EventNameSP.bigModelAvailable)
       self.big_model_available = available
+      self.standstill = stopped
 
     # a join holding modelV2 back keeps the driver out, as the native load does; a late join never blocks
     if status.acceleratorState == AcceleratorState.joining and not sm.alive['modelV2']:

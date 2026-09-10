@@ -165,6 +165,10 @@ class JoiningModelState:
       return 'unavailable'
     if self._active is not self._small:
       return 'running'
+    if self.big_model_available:
+      # nothing left to wait for but a window. The icon says so rather than
+      # pulsing "loading" for the rest of a drive with no stop in it
+      return 'ready'
     return 'retrying' if self._failures else 'joining'
 
   @property
