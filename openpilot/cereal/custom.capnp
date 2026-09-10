@@ -550,8 +550,7 @@ struct CarStateZP @0xc879af11c43cb400 {
     stockCruiseOn @3;
     ready @4;
     restoring @5;
-    restored @6;
-    failed @7;
+    failed @6;
   }
 
   struct CruiseSession {

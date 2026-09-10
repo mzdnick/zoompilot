@@ -58,8 +58,7 @@ of mode is the explicit developer workflow.
 
 `opendbc/sunnypilot/car/stock_ecu.py`: `StockEcuStatus(state, handback_completed,
 handback_failed)`, updated in place by the session manager every control frame. States, the
-driver's view: notNeeded, starting, parkToTakeOver, stockCruiseOn, ready, restoring, restored,
-failed. `ready` is carstate's own silence guard on the owned radar (`radar_owned`), never the
+driver's view: notNeeded, starting, parkToTakeOver, stockCruiseOn, ready, restoring, failed. `ready` is carstate's own silence guard on the owned radar (`radar_owned`), never the
 session acknowledgement. A controller that silences a stock ECU under openpilot longitudinal
 carries `stock_ecu_status`; card reads that one name and nothing brand-specific (`card_ext.py`)
 and publishes the state on `carStateSP.zoompilot.stockEcu`. The detailed reasons (camera
@@ -99,11 +98,11 @@ brand's hand-back off the control loop while the request stands (never starting 
 car, running to the end once started) and answers restored, failed or notNeeded (the
 `StockEcuState` names). Outcomes:
 
-- voluntary (cycle, Force Offroad): proceed on restored/notNeeded; on failed stay open, the
-  vehicle keeps neutral replacement traffic, a late recovery completes it, the user can
-  withdraw. Stopping on a failed hand-back would leave the camera without radar frames, the
-  fault the hand-back exists to prevent.
-- mandatory (reboot, shutdown, uninstall): proceed on any answer.
+- Force Offroad: proceed on restored/notNeeded; on failed stay open, the vehicle keeps
+  neutral replacement traffic, a late recovery completes it, the exit button withdraws.
+  Stopping on a failed hand-back would leave the camera without radar frames, the fault the
+  hand-back exists to prevent.
+- cycle, reboot, shutdown, uninstall (no cancel control): proceed on any answer.
 - no answer at all within 15 s: proceed, no card is alive to hold anything.
 - withdrawn (the record removed): the assert drops, the session manager finishes any in-flight
   restoration and treats the next takeover as a first one.
@@ -123,9 +122,8 @@ shows while a request is pending and withdraws it.
 
 ### Presentation
 
-One line under the alpha switch on both families, from `ui_state.alpha_long_status`
-(`longitudinal_status.py`): `initializing`, `ready` or `failed` while alpha is applied, blank
-otherwise. mici renders it as the toggle's subtitle (`DeveloperLayoutMiciSP`), tizi as the
+One line under the alpha switch on both families, from `ui_state.alpha_long_status`:
+`initializing`, `ready` or `failed` while alpha is applied, blank otherwise. mici renders it as the toggle's subtitle (`DeveloperLayoutMiciSP`), tizi as the
 toggle's description (`DeveloperLayoutSP`); the upstream developer layouts change by one line
 each (the switch is offroad-only). The reason behind `initializing` reaches the driver when they
 act: a SET/RES press before the radar is owned raises the alert-only `stockEcuNotReady`
@@ -166,7 +164,7 @@ PYTHONPATH=. .venv/bin/python -m pytest -q opendbc_repo/opendbc/car/mazda/tests 
   # 821 passed, 44 skipped, 212 subtests passed
 PYTHONPATH=. .venv/bin/python -m pytest -q openpilot/sunnypilot/selfdrive/car/tests openpilot/sunnypilot/system/hardware/tests \
   openpilot/sunnypilot/selfdrive/selfdrived/tests openpilot/selfdrive/selfdrived/tests/test_alerts.py \
-  openpilot/selfdrive/ui/sunnypilot/tests/test_longitudinal_status.py openpilot/system/manager/test
+  openpilot/system/manager/test
   # 215 passed, 31 skipped
 PYTHONPATH=. .venv/bin/python -m pytest -q openpilot/selfdrive/ui/sunnypilot/mici/tests/test_mici_settings.py   # 57 passed
 PYTHONPATH=. .venv/bin/python -m pytest -q openpilot/selfdrive/ui/sunnypilot/tests/test_tizi_settings.py        # 1 passed

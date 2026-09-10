@@ -58,15 +58,13 @@ class TestOnroadCycle:
     assert ext.update(started=True)
     assert not params.get_bool("OnroadCycleRequested")
 
-  def test_failed_handback_holds_the_cycle(self):
-    ext, params, clock = _ext(OnroadCycleRequested=True)
+  def test_failed_handback_does_not_hold_the_cycle(self):
+    # a cycle has no cancel control, so like a reboot it proceeds on any answer
+    ext, params, _ = _ext(OnroadCycleRequested=True)
     ext.update(started=True)
     answer(params, "failed")
-    clock.t = HANDBACK_WAIT_T + 1
-    assert not ext.update(started=True)
-    assert ext.handback.failed and params.get_bool("OnroadCycleRequested")
-    answer(params, "restored")
     assert ext.update(started=True)
+    assert not params.get_bool("OnroadCycleRequested")
 
 
 class TestForcedOffroad:

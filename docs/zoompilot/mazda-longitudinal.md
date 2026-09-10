@@ -87,7 +87,7 @@ full guard window (`STOCK_RADAR_GUARD_T`), not the 50 ms alive window; see the g
 
 The manager reports where ownership stands through the stock ECU transition contract
 (`opendbc/sunnypilot/car/stock_ecu.py`, one state: starting, parkToTakeOver, stockCruiseOn,
-ready, restoring, restored, failed), which card publishes on `carStateSP.zoompilot.stockEcu`
+ready, restoring, failed), which card publishes on `carStateSP.zoompilot.stockEcu`
 for the UI's status line and the engage-press alert. A moving request that the radar refuses
 or never answers, or a radar heard again under our frames, closes moving attempts for the
 session and leaves the parked attempt open (`moving_closed`); a parked refusal is definitive
@@ -122,10 +122,9 @@ Every software stop goes through the same hand-back, brokered by `stock_ecu_hand
 correlated request/result pair (`StockEcuHandBackRequest` `{id}`, `StockEcuHandBackResult`
 `{id, outcome}`). hardwared holds `OnroadCycleRequested` (calibration reset, restart-needed
 toggles) and `OffroadModeRequested` (forced offroad), manager holds `DoReboot` / `DoShutdown` / `DoUninstall`; a second consumer joins an
-open request. Voluntary stops proceed only on restored or notNeeded and stay open and visible on
-failed (neutral replacement traffic continues, a late recovery completes them, the user can
-withdraw); mandatory stops proceed on any answer; either proceeds after 15 s with no answer at
-all. `OffroadMode` is written by hardwared alone, because pandad reads it and drops the panda's
+open request. Forced offroad proceeds only on restored or notNeeded and stays open on failed
+(neutral replacement traffic continues, a late recovery completes it, the exit button withdraws
+it); every other stop proceeds on any answer; either proceeds after 15 s with no answer at all. `OffroadMode` is written by hardwared alone, because pandad reads it and drops the panda's
 ignition within 100 ms; remote writes are blocked and the sunnylink toggle is bound to the
 request param. These stops are served moving or not, since they happen either way: route 0000020c
 handed the radar back at 117.7 km/h in 0.63 s (request 569.566, `06 50 01` 569.572, stock

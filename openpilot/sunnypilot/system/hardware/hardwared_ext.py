@@ -20,7 +20,8 @@ class HardwaredExt:
   that the UI and remote settings write. OffroadMode itself is written here alone, because
   pandad reads it and drops the panda's ignition within 100 ms, before any hand-back could
   run. Entering waits on the stock ECU hand-back while onroad (stock_ecu_handback.py); a
-  failed hand-back keeps the request open and visible rather than stopping on a timer.
+  failed hand-back keeps the forced-offroad request open (the exit button withdraws it)
+  rather than stopping on a timer.
   Exiting clears the previous session's CarParams and readiness first, so pandad sequences
   the fresh session like a boot (ELM327 until the new CarParams is ready) instead of
   applying the old safety and opening the relay seconds before controls come up.
@@ -28,8 +29,7 @@ class HardwaredExt:
 
   def __init__(self, params: Params) -> None:
     self.params = params
-    # a voluntary stop: held open on a failed hand-back rather than taken on a timer
-    self.handback = StockEcuHandBackGate(params, voluntary=True)
+    self.handback = StockEcuHandBackGate(params, voluntary=False)
 
   def update(self, started: bool) -> bool:
     cycle = self.params.get_bool("OnroadCycleRequested")
@@ -41,6 +41,9 @@ class HardwaredExt:
     if not (cycle or enter):
       self.handback.reset()
       return False
+    # forced offroad has an exit button to withdraw it, so it may hold on a failed hand-back;
+    # a cycle has no cancel and proceeds on any answer, like a reboot
+    self.handback.voluntary = enter
     if not self.handback.ready(started):
       return False
     if enter:

@@ -24,7 +24,7 @@ StockEcuState = custom.CarStateZP.StockEcuState
 # (Mazda route 0000020d: six main presses and stock MRCC engaged under a takeover that was
 # waiting for a stop, nothing shown). Alert-only; the press itself does nothing.
 STOCK_ECU_NOT_READY = (StockEcuState.starting, StockEcuState.parkToTakeOver, StockEcuState.stockCruiseOn,
-                       StockEcuState.restoring, StockEcuState.restored, StockEcuState.failed)
+                       StockEcuState.restoring, StockEcuState.failed)
 
 
 class CarSpecificEventsSP:

@@ -5,12 +5,12 @@ This file is part of zoompilot and is licensed under the MIT License.
 See the LICENSE.md file in the root directory for more details.
 """
 from opendbc.car import structs
-from opendbc.sunnypilot.car.stock_ecu import StockEcuState, StockEcuStatus
-from openpilot.sunnypilot.selfdrive.car.stock_ecu_handback import (HANDBACK_WAIT_T, REQUEST_KEY, RESULT_KEY,
+from opendbc.sunnypilot.car.stock_ecu import StockEcuStatus
+from openpilot.sunnypilot.selfdrive.car.stock_ecu_handback import (HANDBACK_WAIT_T, REQUEST_KEY, RESULT_KEY, HandBackOutcome,
                                                                    StockEcuHandBackGate, StockEcuHandBackServer)
 from openpilot.sunnypilot.selfdrive.car.tests.fakes import FakeClock, FakeParams, answer
 
-RESTORED, FAILED, NOT_NEEDED = StockEcuState.RESTORED, StockEcuState.FAILED, StockEcuState.NOT_NEEDED
+RESTORED, FAILED, NOT_NEEDED = HandBackOutcome.RESTORED, HandBackOutcome.FAILED, HandBackOutcome.NOT_NEEDED
 
 
 def _gate(voluntary=True, **values):

@@ -10,10 +10,10 @@ from openpilot.cereal import messaging, log, custom
 from opendbc.car.structs import car
 from openpilot.common.params import Params
 from openpilot.selfdrive.ui.sunnypilot.layouts.settings.display import OnroadBrightness
-from openpilot.selfdrive.ui.sunnypilot.longitudinal_status import alpha_long_status
 from openpilot.sunnypilot.models.helpers import ACTIVE_BUNDLE_KEYS, get_active_source
 from openpilot.sunnypilot.sunnylink.sunnylink_state import SunnylinkState
 from openpilot.system.ui.lib.application import gui_app
+from openpilot.system.ui.lib.multilang import tr
 from openpilot.system.ui.sunnypilot.widgets.screen_saver import ScreenSaverSP
 
 OpenpilotState = log.SelfdriveState.OpenpilotState
@@ -75,12 +75,16 @@ class UIStateSP:
     self.update_alpha_long_status()
 
   def update_alpha_long_status(self) -> None:
-    """The stock ECU status card publishes on carStateSP, as the alpha toggle's status line."""
+    """The line under the alpha longitudinal switch, the same on both device families. The
+    switch is the saved preference and only editable offroad (forced offroad included), so
+    onroad the line says what the running session's stock ECU takeover is doing, from
+    carStateSP.zoompilot.stockEcu: initializing, ready or failed. Ready never means engaged.
+    The reason behind initializing reaches the driver as an alert when they press SET."""
     sm = self.sm
-    fresh = self.started and sm.alive["carStateSP"] and sm.recv_frame["carStateSP"] > self.started_frame
+    applied = self.started and self.CP is not None and self.CP.openpilotLongitudinalControl
+    fresh = applied and sm.alive["carStateSP"] and sm.recv_frame["carStateSP"] > self.started_frame
     stock_ecu = str(sm["carStateSP"].zoompilot.stockEcu) if fresh else None
-    applied = self.CP is not None and self.CP.openpilotLongitudinalControl
-    self.alpha_long_status = alpha_long_status(self.started, applied, stock_ecu)
+    self.alpha_long_status = "" if not applied else tr("ready") if stock_ecu == "ready" else tr("failed") if stock_ecu == "failed" else tr("initializing")
 
   def onroad_brightness_handle_alerts(self, _ui_state, alert):
     if _ui_state.sm.recv_frame["carState"] < _ui_state.started_frame:

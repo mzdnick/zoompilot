@@ -17,8 +17,8 @@ Consumer (`StockEcuHandBackGate`, in hardwared and manager): writes StockEcuHand
 {id} and holds its action until StockEcuHandBackResult carries the same id. A second consumer
 arriving while one request is open joins it, so exactly one hand-back is ever in flight.
 Producer (`StockEcuHandBackServer`, in card): asserts the brand's hand-back off the control loop
-while the request stands and writes the result with the vehicle's outcome, one of the
-StockEcuState names restored, failed or notNeeded. Ids are monotonic past every record on file
+while the request stands and writes the result with the vehicle's outcome: restored, failed or
+notNeeded. Ids are monotonic past every record on file
 and both records clear on the offroad transition, so a stale answer never satisfies a new
 request, and a withdrawn request (the record removed) is a fresh start for the vehicle.
 
@@ -29,8 +29,9 @@ any answer. Either kind proceeds after HANDBACK_WAIT_T with no answer at all, wh
 card is alive to give one. Ignition off and power loss cannot be held.
 """
 import time
+from enum import StrEnum
 
-from opendbc.sunnypilot.car.stock_ecu import StockEcuState, StockEcuStatus
+from opendbc.sunnypilot.car.stock_ecu import StockEcuStatus
 from openpilot.common.params import Params
 from openpilot.common.swaglog import cloudlog
 
@@ -41,7 +42,15 @@ RESULT_KEY = "StockEcuHandBackResult"
 # answer at all the processes are assumed dead, and the stop goes ahead regardless.
 HANDBACK_WAIT_T = 15.0
 
-SETTLED = (StockEcuState.RESTORED, StockEcuState.NOT_NEEDED)
+
+
+class HandBackOutcome(StrEnum):
+  NOT_NEEDED = "notNeeded"
+  RESTORED = "restored"
+  FAILED = "failed"
+
+
+SETTLED = (HandBackOutcome.RESTORED, HandBackOutcome.NOT_NEEDED)
 
 
 def read_record(params: Params, key: str) -> dict | None:
@@ -96,7 +105,7 @@ class StockEcuHandBackGate:
       if outcome in SETTLED:
         self._close()
         return True
-      if outcome == StockEcuState.FAILED:
+      if outcome == HandBackOutcome.FAILED:
         if not self.failed:
           cloudlog.error(f"stock ECU hand-back {self.request_id} failed")
         self.failed = True
@@ -129,18 +138,18 @@ class StockEcuHandBackServer:
     self.status = status
     self.request: dict | None = None
     self.started = False       # asserted once: held for as long as the request stands
-    self.answered: tuple[int, StockEcuState] | None = None
+    self.answered: tuple[int, HandBackOutcome] | None = None
 
   def update_params(self) -> None:
     # rides card's 10 Hz params thread
     self.request = read_record(self.params, REQUEST_KEY)
 
-  def _answer(self, request_id: int, outcome: StockEcuState) -> None:
+  def _answer(self, request_id: int, outcome: HandBackOutcome) -> None:
     if self.answered == (request_id, outcome):
       return
     self.params.put(RESULT_KEY, {"id": request_id, "outcome": str(outcome)})
     self.answered = (request_id, outcome)
-    (cloudlog.error if outcome == StockEcuState.FAILED else cloudlog.warning)(f"stock ECU hand-back {request_id} answered {outcome}")
+    (cloudlog.error if outcome == HandBackOutcome.FAILED else cloudlog.warning)(f"stock ECU hand-back {request_id} answered {outcome}")
 
   def update(self, enabled: bool, CC_SP) -> None:
     """Runs at 100 Hz before CI.apply. CC_SP is rebuilt every frame, so the assert is re-applied
@@ -150,7 +159,7 @@ class StockEcuHandBackServer:
       return
     request_id = self.request["id"]
     if self.status is None:
-      self._answer(request_id, StockEcuState.NOT_NEEDED)
+      self._answer(request_id, HandBackOutcome.NOT_NEEDED)
       return
     # Never start on an engaged car: the hand-back revokes availability under the driver.
     # Once started it runs to its end.
@@ -159,6 +168,6 @@ class StockEcuHandBackServer:
     self.started = True
     CC_SP.stockEcuHandBack = True
     if self.status.handback_completed:
-      self._answer(request_id, StockEcuState.RESTORED)
+      self._answer(request_id, HandBackOutcome.RESTORED)
     elif self.status.handback_failed:
-      self._answer(request_id, StockEcuState.FAILED)
+      self._answer(request_id, HandBackOutcome.FAILED)
