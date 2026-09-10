@@ -45,7 +45,10 @@ def main():
     if argv and (Path(os.fsdecode(argv[0])).name == 'camerad' or
                  b'openpilot.selfdrive.modeld.modeld' in argv):
       raise SystemExit(f'physical resource already owned by {proc.parent.name}: {argv[:3]}')
-  keys = ('CarParamsPersistent', 'CalibrationParams', 'ModelManager_ActiveBundleChestnut', 'JetlinkModelPointers',
+  # the slot names a ref; without the catalog it names nothing the picker can
+  # find, and the join asks for a model that has not been picked
+  keys = ('CarParamsPersistent', 'CalibrationParams', 'ModelManager_ActiveBundleChestnut',
+          'ModelManager_ModelsCache_Chestnut', 'JetlinkModelPointers',
           'JetlinkSpec', 'JetlinkEngineReady', 'JetlinkEndpoint')
   saved = {key: live.get(key) for key in keys}
   if saved['CarParamsPersistent'] is None:
