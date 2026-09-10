@@ -39,7 +39,7 @@ class TestBigModelReady(unittest.TestCase):
     sd.params.get.return_value = active
     sd.sm.alive['modelV2'] = alive
     sd.sm['modelV2'].big = big
-    sd.update_events(SimpleNamespace())
+    sd.update_events(SimpleNamespace(standstill=False))
     return EventNameSP.bigModelReady in sd.events_sp.names, EventName.bigModelFailed in sd.events.names
 
   def test_failed_load_never_chimes_ready(self):

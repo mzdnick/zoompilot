@@ -27,12 +27,12 @@ class TestBigModelAvailability(unittest.TestCase):
       self.sm.alive[service] = True
       self.sm.valid[service] = True
 
-  def update(self, available=False, big=False):
+  def update(self, available=False, big=False, standstill=False):
     self.sm['modelDataV2SP'].bigModelAvailable = available
     self.sm['modelV2'].big = big
     self.events.clear()
     self.events_sp.clear()
-    self.accel.update(self.sm, False, self.events, self.events_sp)
+    self.accel.update(self.sm, False, standstill, self.events, self.events_sp)
     return EventName.bigModelAvailable in self.events_sp.names
 
   def test_late_boot_chimes_once_then_can_rejoin(self):
@@ -43,6 +43,19 @@ class TestBigModelAvailability(unittest.TestCase):
     self.assertFalse(self.update(big=True))
     self.assertFalse(self.update())  # fallback, waiting to reconnect
     self.assertTrue(self.update(available=True))
+
+  def test_every_stop_repeats_the_offer_while_it_is_still_waiting(self):
+    # the swap window only opens at a standstill, so the alert that tells the
+    # driver to open it is worth repeating at each one
+    self.assertTrue(self.update(available=True))
+    self.assertFalse(self.update(available=True))
+    self.assertTrue(self.update(available=True, standstill=True))
+    for _ in range(50):
+      self.assertFalse(self.update(available=True, standstill=True))
+    self.assertFalse(self.update(available=True))
+    self.assertTrue(self.update(available=True, standstill=True))
+    # once it is driving, a stop is not an offer
+    self.assertFalse(self.update(big=True, standstill=True))
 
   def test_chestnut_and_old_messages_do_not_announce_availability(self):
     self.assertFalse(custom.ModelDataV2SP.new_message().bigModelAvailable)
@@ -75,7 +88,7 @@ class TestBigModelAvailability(unittest.TestCase):
   def test_notification_has_no_control_effect(self):
     alerts = EVENTS_SP[EventName.bigModelAvailable]
     self.assertEqual(set(alerts), {ET.PERMANENT})
-    self.assertEqual(alerts[ET.PERMANENT].alert_text_2, 'Disengage to switch')
+    self.assertEqual(alerts[ET.PERMANENT].alert_text_2, 'Stop with cruise off,\nor turn lateral off')
 
   def test_main_event_loop_checks_availability_and_preserves_ready(self):
     # Stop update_events at its normal initialization gate, after model events.
@@ -98,14 +111,14 @@ class TestBigModelAvailability(unittest.TestCase):
     sd.startup_event = None
     sd.sm['modelDataV2SP'].acceleratorState = 'joining'
     sd.sm['modelDataV2SP'].bigModelAvailable = True
-    sd.update_events(SimpleNamespace())
+    sd.update_events(SimpleNamespace(standstill=False))
     self.assertIn(EventName.bigModelAvailable, sd.events_sp.names)
     self.assertNotIn(EventName.bigModelReady, sd.events_sp.names)
     sd.sm['modelDataV2SP'].acceleratorState = 'running'
     sd.sm['modelDataV2SP'].bigModelAvailable = False
     sd.sm['modelV2'].big = True
-    sd.update_events(SimpleNamespace())
+    sd.update_events(SimpleNamespace(standstill=False))
     self.assertIn(EventName.bigModelReady, sd.events_sp.names)
     self.assertNotIn(EventName.bigModelAvailable, sd.events_sp.names)
-    sd.update_events(SimpleNamespace())
+    sd.update_events(SimpleNamespace(standstill=False))
     self.assertNotIn(EventName.bigModelReady, sd.events_sp.names)

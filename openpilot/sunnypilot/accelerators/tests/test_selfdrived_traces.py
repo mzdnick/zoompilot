@@ -45,7 +45,7 @@ AcceleratorState = custom.ModelDataV2SP.AcceleratorState
 # than filtered out
 INIT = 'selfdriveInitializing'
 
-SERVICES = ['modelV2', 'modelDataV2SP', 'carState', 'controlsState', 'deviceState', 'lateralManeuverPlan', 'alertDebug']
+SERVICES = ['modelV2', 'modelDataV2SP', 'controlsState', 'deviceState', 'lateralManeuverPlan', 'alertDebug']
 
 
 def make_selfdrived(chestnut_present: bool, enabled: bool) -> SelfdriveD:
@@ -56,7 +56,7 @@ def make_selfdrived(chestnut_present: bool, enabled: bool) -> SelfdriveD:
   """
   sd = SelfdriveD.__new__(SelfdriveD)
   sd.sm = messaging.SubMaster(SERVICES)
-  for service in ('modelV2', 'modelDataV2SP', 'carState', 'deviceState'):
+  for service in ('modelV2', 'modelDataV2SP', 'deviceState'):
     sd.sm.data[service] = sd.sm[service].as_builder()
     sd.sm.valid[service] = True
   sd.sm.seen['deviceState'] = sd.sm.alive['deviceState'] = True
@@ -88,9 +88,8 @@ class TraceTest(unittest.TestCase):
     sd.sm['modelV2'].big = big
     sd.sm['modelDataV2SP'].acceleratorState = state
     sd.sm['modelDataV2SP'].bigModelAvailable = available
-    sd.sm.seen['carState'] = sd.sm.alive['carState'] = True
-    sd.sm['carState'].standstill = standstill
-    sd.update_events(SimpleNamespace())
+    # carState reaches selfdrived on its own socket, not through the SubMaster
+    sd.update_events(SimpleNamespace(standstill=standstill))
     return ([EVENT_NAME[n] for n in sd.events.names], [EVENT_NAME_SP[n] for n in sd.events_sp.names])
 
 

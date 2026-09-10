@@ -27,13 +27,13 @@ class TestAcceleratorEvents(unittest.TestCase):
       self.sm.data[service] = self.sm[service].as_builder()
       self.sm.seen[service] = self.sm.alive[service] = self.sm.valid[service] = True
 
-  def step(self, state='none', big=False, alive=True, enabled=False):
+  def step(self, state='none', big=False, alive=True, enabled=False, standstill=False):
     self.sm['modelDataV2SP'].acceleratorState = state
     self.sm['modelV2'].big = big
     self.sm.alive['modelV2'] = alive
     self.events.clear()
     self.events_sp.clear()
-    self.accel.update(self.sm, enabled, self.events, self.events_sp)
+    self.accel.update(self.sm, enabled, standstill, self.events, self.events_sp)
     return (EventName.bigModelLoading in self.events.names, EventName.bigModelFailed in self.events.names,
             EventNameSP.bigModelLinkLost in self.events_sp.names)
 
@@ -124,13 +124,13 @@ class TestNativeTracesWithAdapter(unittest.TestCase):
     sd.startup_event = None
     self.sd = sd
 
-  def step(self, loading, active=None, big=False, alive=True):
+  def step(self, loading, active=None, big=False, alive=True, standstill=False):
     sd = self.sd
     sd.params.get_bool.return_value = loading
     sd.params.get.return_value = active
     sd.sm.alive['modelV2'] = alive
     sd.sm['modelV2'].big = big
-    sd.update_events(SimpleNamespace())
+    sd.update_events(SimpleNamespace(standstill=standstill))
     self.assertNotIn(EventNameSP.bigModelAvailable, sd.events_sp.names)
     self.assertNotIn(EventNameSP.bigModelLinkLost, sd.events_sp.names)
     return (EventNameSP.bigModelReady in sd.events_sp.names, EventName.bigModelFailed in sd.events.names,
