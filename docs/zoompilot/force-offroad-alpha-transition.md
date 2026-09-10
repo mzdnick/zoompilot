@@ -128,10 +128,11 @@ One line under the alpha switch on both families, from `ui_state.alpha_long_stat
 otherwise. mici renders it as the toggle's subtitle (`DeveloperLayoutMiciSP`), tizi as the
 toggle's description (`DeveloperLayoutSP`); the upstream developer layouts change by one line
 each (the switch is offroad-only). The reason behind `initializing` reaches the driver when they
-act: a SET/RES press before the radar is owned, or owned with cruise main off, raises the
-alert-only `stockEcuNotReady` (`car_specific.py`, brand-independent, fed from `carStateSP`) with
-the text keyed on the published state: "Park to Take Over the Radar", "Turn Off Stock Cruise",
-"Press Cruise Main", "Radar Not Answering", else "Alpha Longitudinal Initializing".
+act: a SET/RES press before the radar is owned raises the alert-only `stockEcuNotReady`
+(`car_specific.py`, brand-independent, fed from `carStateSP`) with the text keyed on the
+published state: "Park to Take Over the Radar", "Turn Off Stock Cruise", "Radar Not Answering",
+else "Alpha Longitudinal Initializing". Cruise main off is the car's own state, on its own
+cluster, as on a stock Mazda; openpilot adds nothing there.
 
 Screenshots of the three states on both families:
 `openpilot/sunnypilot/selfdrive/ui/tests/screenshot_longitudinal_status.py` (output untracked
@@ -150,7 +151,7 @@ under `screenshots/{mici,tizi}/`).
 | Exit into alpha, other radars | `initializing`; SET press: "Park to Take Over the Radar" | parked takeover at the next stop |
 | Alpha to offroad to alpha, no edit | same as a fresh initialization | the old session's hand-back died with its process; reacquired |
 | Stock cruise engaged at exit | `initializing`; SET press: "Turn Off Stock Cruise" | gate holds; a queued request is undone |
-| Owned, main off | `ready`; SET press: "Press Cruise Main" | no synthetic arming; the body arms on the driver's MAIN (20a/20c/20f) |
+| Owned, main off | `ready`; the cluster's own MRCC indicator | no synthetic arming; the body arms on the driver's MAIN (20a/20c/20f) |
 | Hand-back fails | `failed`; exit button withdraws | request held open, neutral traffic continues, late recovery completes |
 | Request withdrawn | `initializing` then `ready` | a fresh takeover under the normal gate |
 | Card absent / CAN lost | `initializing` | status unknown; no readiness |

@@ -30,7 +30,6 @@ IS_MICI = HARDWARE.get_device_type() == 'mici'
 STOCK_ECU_ALERT_TEXT = {
   "parkToTakeOver": ("Park to Take Over the Radar", "Alpha longitudinal starts at the next stop"),
   "stockCruiseOn": ("Turn Off Stock Cruise", "Alpha longitudinal waits for it"),
-  "ready": ("Press Cruise Main", ""),
   "failed": ("Radar Not Answering", "Stock cruise stays for this drive"),
 }
 
@@ -228,8 +227,8 @@ EVENTS_SP: dict[int, dict[str, Alert | AlertCallbackType]] = {
   },
 
   # SET/RES pressed before openpilot owns the stock ECU it stands in for (the Mazda radar
-  # takeover), or owned with the driver's cruise main off. Alert-only: the body does not
-  # engage, so there is nothing to refuse, but the press deserves the reason.
+  # takeover). Alert-only: the body does not engage, so there is nothing to refuse, but the
+  # press deserves the reason.
   EventNameSP.stockEcuNotReady: {
     ET.WARNING: stock_ecu_not_ready_alert,
   },

@@ -81,6 +81,6 @@ class CarSpecificEventsSP:
 
   @staticmethod
   def stock_ecu_not_ready(CS: structs.CarState, stock_ecu) -> bool:
-    """An engage press while the stock ECU is not owned, or owned with the driver's main off."""
-    pressed = any(be.pressed and be.type in SET_SPEED_BUTTONS for be in CS.buttonEvents)
-    return pressed and (stock_ecu in STOCK_ECU_NOT_READY or (stock_ecu == StockEcuState.ready and not CS.cruiseState.available))
+    """An engage press while openpilot does not own the stock ECU it stands in for. Cruise main
+    off is the car's own state, shown on its own cluster, and is left to it."""
+    return stock_ecu in STOCK_ECU_NOT_READY and any(be.pressed and be.type in SET_SPEED_BUTTONS for be in CS.buttonEvents)
