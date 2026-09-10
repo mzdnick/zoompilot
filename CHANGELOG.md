@@ -1,9 +1,9 @@
-zoompilot Version 2026.09.07-13 (2026-09-07)
+zoompilot v2026.09.07-13
 ========================
 * Fixes bugs
   * Fixes the install for comma 3X users. Upstream sunnypilot stopped prebuilding the camera warps for the 3X during the Chestnut changes.
 
-zoompilot Version 2026.09.07-12 (2026-09-07)
+zoompilot v2026.09.07-12
 ========================
 * Fixes bugs
   * Enables the full zoompilot steering enhancements for users without a steer-to-zero EPS.
@@ -11,7 +11,7 @@ zoompilot Version 2026.09.07-12 (2026-09-07)
   * Upstream sunnypilot Chestnut fixes.
   * Fixes the "Controls Mismatch: Lateral" error when enabling alpha longitudinal with brake pedal presses.
 
-zoompilot Version 2026.09.05-11 (2026-09-05)
+zoompilot v2026.09.05-11
 ========================
 New steering tune, Smart Cruise reimplemented, Alpha Longitudinal stop-and-go fixed
 * Speed-dependent torque tune v2 is the default. Rewritten on the v0 base. It turns in earlier for curves and reduces oscillations and micro-adjustments on the highway. v0 and v1 are unchanged if you prefer them.
@@ -46,7 +46,7 @@ New steering tune, Smart Cruise reimplemented, Alpha Longitudinal stop-and-go fi
   * Scrolling labels run at the right speed on non-60 Hz screens.
   * Two openpilot syncs: UI cleanups and Chestnut power fault logging.
 
-zoompilot Version 2026.08.25-8 (2026-08-25)
+zoompilot v2026.08.25-8
 ========================
 * Fingerprint Mazdas on VIN and EPS. Supports more Mazda models more reliably by using the VIN for fingerprinting. EPS fingerprinting determines whether an EPS-swapped car can steer to zero. By @mzdnick.
 * zoompilot branding in the UI. By @mzdnick.
@@ -68,12 +68,12 @@ zoompilot Version 2026.08.25-8 (2026-08-25)
   * Fixed canceling cruise whilst braking. Thank you @mzdnick.
   * Alpha longitudinal enabled on EPS-swapped models (CX-9).
 
-zoompilot Version 2026.08.02-5 (2026-08-02)
+zoompilot v2026.08.02-5
 ========================
 Alpha longitudinal handoff
 * More reliable handoff when you override acceleration with the pedal, and more reliable stop and hold.
 
-zoompilot Version 2026.08.01-4 (2026-08-01)
+zoompilot v2026.08.01-4
 ========================
 First release on the zoompilot channel
 * New home, new install URL. The fork lives at zoompilot/zoompilot and installs from zoompilot/main. If you are already running zoompilot you don't need to do anything: your device repoints itself on its next start.
@@ -86,7 +86,7 @@ First release on the zoompilot channel
 * Latest sunnypilot and openpilot. New alert sounds and softer driver monitoring nags. Lane changes arm right away if your blinker is already on. Map-based curve slowdowns are more accurate, map hiccups no longer trip false warnings, the false NO PANDA flash on screen wake is gone, and you can switch software branches from the device screen.
 * Leaner install. Setup no longer downloads a 1.8GB driving model the device never uses.
 
-zoompilot (2026-07-04)
+zoompilot 2026-07-04
 ========================
 Smart cruise and EPS swaps
 * Smart cruise decel overshoot. New alpha toggle. The Mazda ECU is slow to obey a lower set speed, so this asks for more than the model wants and gets the deceleration the curve needs.
