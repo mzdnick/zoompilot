@@ -423,6 +423,7 @@ LAYOUT_TARGETS = [
   ("display", "DisplayLayoutMici"),
   ("models", "ModelsLayoutMici"),
   ("settings", "SettingsLayoutSP"),
+  ("software", "SoftwareLayoutSP"),
   ("steering", "SteeringLayoutMici"),
   ("sunnylink", "SunnylinkLayoutMici"),
   ("trips", "TripsLayoutMici"),
@@ -460,6 +461,51 @@ class TestSubtitleAreaRenders:
     btn = self._button(value="on")
     assert btn._badge_labels is None
     render(btn)
+
+
+class TestReleaseNotes:
+  """The notes only exist as params updated writes, so the button has to read the right pair."""
+
+  def _button(self, params, current=b"<h1>old</h1>", new=b"<h1>new</h1>", available=False):
+    from openpilot.selfdrive.ui.sunnypilot.mici.layouts.software import ReleaseNotesButton
+
+    params.put("UpdaterCurrentDescription", "0.1 / develop / abc / 2026-01-01", block=True)
+    params.put("UpdaterNewDescription", "0.2 / develop / def / 2026-01-02", block=True)
+    params.put("UpdaterCurrentReleaseNotes", current, block=True)
+    params.put("UpdaterNewReleaseNotes", new, block=True)
+    params.put_bool("UpdateAvailable", available, block=True)
+    return ReleaseNotesButton()
+
+  def test_shows_installed_version(self, params):
+    btn = self._button(params)
+    render(btn)
+    assert btn.get_value() == "0.1"
+    btn._on_click()
+    assert "old" in [e.content for e in btn._page._content.elements]
+
+  def test_shows_pending_version(self, params):
+    btn = self._button(params, available=True)
+    render(btn)
+    assert btn.get_value() == "0.2"
+    btn._on_click()
+    assert "new" in [e.content for e in btn._page._content.elements]
+
+  def test_page_renders_without_notes(self, params):
+    btn = self._button(params, current=b"")
+    btn._on_click()
+    render(btn._page)
+
+  def test_page_renders_changelog(self, params):
+    # the real thing: the first CHANGELOG.md block, parsed the way updated does it
+    import os
+    from openpilot.common.basedir import BASEDIR
+    from openpilot.system.updated.updated import parse_release_notes
+
+    btn = self._button(params, current=parse_release_notes(BASEDIR))
+    assert os.path.exists(os.path.join(BASEDIR, "CHANGELOG.md"))
+    btn._on_click()
+    render(btn._page)
+    assert len(btn._page._content.elements) > 1
 
 
 class TestLayoutsSurviveRender:
