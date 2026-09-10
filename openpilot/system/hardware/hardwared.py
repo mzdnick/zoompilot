@@ -198,7 +198,7 @@ def hw_state_thread(end_event, hw_queue):
 def hardware_thread(end_event, hw_queue) -> None:
   system_stats = LinuxSystemStats()
   pm = messaging.PubMaster(['deviceState'])
-  sm = messaging.SubMaster(["peripheralState", "gpsLocationExternal", "selfdriveState", "pandaStates", "chestnutState", HardwaredExt.SERVICE], poll="pandaStates")
+  sm = messaging.SubMaster(["peripheralState", "gpsLocationExternal", "selfdriveState", "pandaStates", "chestnutState"], poll="pandaStates")
 
   count = 0
 
@@ -235,7 +235,7 @@ def hardware_thread(end_event, hw_queue) -> None:
   offroad_cycle_count = 0
 
   params = Params()
-  ext = HardwaredExt(params, SERVICE_LIST['pandaStates'].frequency)
+  ext = HardwaredExt(params)
   power_monitor = PowerMonitoring()
 
   uptime_offroad: float = params.get("UptimeOffroad", return_default=True)
@@ -257,13 +257,9 @@ def hardware_thread(end_event, hw_queue) -> None:
     peripheralState = sm['peripheralState']
 
     # handle requests to cycle system started state
-    if params.get_bool("OnroadCycleRequested"):
-      params.put_bool("OnroadCycleRequested", False, block=True)
-      ext.on_onroad_cycle()
+    if ext.update(started_ts is not None):
       offroad_cycle_count = sm.frame
     onroad_conditions["not_onroad_cycle"] = (sm.frame - offroad_cycle_count) >= ONROAD_CYCLE_TIME * SERVICE_LIST['pandaStates'].frequency
-
-    ext.update(sm, started_ts is not None, engaged_prev)
 
     if sm.updated['pandaStates'] and len(pandaStates) > 0:
 

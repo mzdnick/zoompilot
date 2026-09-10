@@ -5,23 +5,40 @@ This file is part of zoompilot and is licensed under the MIT License.
 See the LICENSE.md file in the root directory for more details.
 """
 from openpilot.common.params import Params, ParamKeyFlag
-from openpilot.sunnypilot.system.offroad_request import OffroadRequestGate
+from openpilot.sunnypilot.selfdrive.car.stock_ecu_handback import StockEcuHandBackGate
 
 
 class HardwaredExt:
   """zoompilot's hooks into hardwared's hardware_thread, one object so hardwared.py carries one-line call sites.
 
-  Ordering contract with hardware_thread: on_onroad_cycle runs inside the OnroadCycleRequested
-  branch, after the request param is cleared; update runs once per loop, after sm.update and
-  before the onroad conditions are evaluated. sm is hardwared's SubMaster and must carry SERVICE.
+  Ordering contract with hardware_thread: update runs at the top of every loop, before the
+  onroad conditions are evaluated. It returns True on the loop that starts an onroad cycle.
+
+  Two software stops are brokered here. OnroadCycleRequested is upstream's; OffroadModeRequested
+  replaces a direct OffroadMode write from the UI, because pandad reads OffroadMode itself and
+  drops the panda's ignition within 100 ms, before any hand-back could run. Both wait for the
+  stock ECU hand-back while onroad (stock_ecu_handback.py).
   """
 
-  # extra SubMaster service: vEgo for the standstill side of the offroad-request grant
-  SERVICE = "carState"
-
-  def __init__(self, params: Params, rate_hz: float) -> None:
+  def __init__(self, params: Params) -> None:
     self.params = params
-    self.offroad_request_gate = OffroadRequestGate(rate_hz)
+    self.handback = StockEcuHandBackGate(params)
+
+  def update(self, started: bool) -> bool:
+    cycle = self.params.get_bool("OnroadCycleRequested")
+    offroad = self.params.get_bool("OffroadModeRequested")
+    if not (cycle or offroad):
+      self.handback.reset()
+      return False
+    if not self.handback.ready(started):
+      return False
+    if offroad:
+      self.params.put_bool("OffroadModeRequested", False, block=True)
+      self.params.put_bool("OffroadMode", True, block=True)
+    if cycle:
+      self.params.put_bool("OnroadCycleRequested", False, block=True)
+      self.on_onroad_cycle()
+    return cycle
 
   def on_onroad_cycle(self) -> None:
     # pandad races manager's onroad-transition param clearing when the cycle restarts.
@@ -31,16 +48,3 @@ class HardwaredExt:
     # session sequences like a normal boot: ELM327 (relay closed) until the fresh
     # CarParams is ready.
     self.params.clear_all(ParamKeyFlag.CLEAR_ON_ONROAD_TRANSITION)
-
-  def update(self, sm, session_active: bool, engaged: bool) -> bool:
-    """Grants OffroadModeRequested when the gate allows it. Returns True on a grant."""
-    # Force-offroad requests defer to card so brands that silence a stock ECU can hand
-    # it back first (openpilot/sunnypilot/selfdrive/car/alpha_long_toggle.py). Grant
-    # directly when there is no onroad session to hand back from, or if card has not
-    # finished in time. Never grant a fallback while the car is moving.
-    v_ego = sm[self.SERVICE].vEgo if sm.alive[self.SERVICE] else None
-    if not self.offroad_request_gate.update(self.params.get_bool("OffroadModeRequested"), session_active, engaged, v_ego):
-      return False
-    self.params.put_bool("OffroadMode", True)
-    self.params.put_bool("OffroadModeRequested", False)
-    return True
