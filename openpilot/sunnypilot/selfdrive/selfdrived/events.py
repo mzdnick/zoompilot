@@ -36,6 +36,18 @@ def soft_disable_alert(alert_text_2: str) -> AlertCallbackType:
   return func
 
 
+STOCK_ECU_ALERT_TEXT = {
+  "parkToTakeOver": ("Park to Take Over the Radar", "Alpha longitudinal starts at the next stop"),
+  "stockCruiseOn": ("Turn Off Stock Cruise", "Alpha longitudinal waits for it"),
+  "failed": ("Radar Not Answering", "Stock cruise stays for this drive"),
+}
+
+
+def stock_ecu_not_ready_alert(CP: car.CarParams, CS: car.CarState, sm: messaging.SubMaster, metric: bool, soft_disable_time: int, personality) -> Alert:
+  text = STOCK_ECU_ALERT_TEXT.get(str(sm['carStateSP'].zoompilot.stockEcu), ("Alpha Longitudinal Initializing", "Wait for the radar takeover"))
+  return NormalPermanentAlert(text[0], text[1], duration=2.)
+
+
 def speed_limit_adjust_alert(CP: car.CarParams, CS: car.CarState, sm: messaging.SubMaster, metric: bool, soft_disable_time: int, personality) -> Alert:
   speedLimit = sm['longitudinalPlanSP'].speedLimit.resolver.speedLimit
   speed = round(speedLimit * (CV.MS_TO_KPH if metric else CV.MS_TO_MPH))
@@ -221,6 +233,13 @@ EVENTS_SP: dict[int, dict[str, Alert | AlertCallbackType]] = {
       "Press the TJA button to switch it off",
       AlertStatus.userPrompt, AlertSize.mid,
       Priority.LOW, VisualAlert.none, AudibleAlert.prompt, 4.),
+  },
+
+  # SET/RES pressed before openpilot owns the stock ECU it stands in for (the Mazda radar
+  # takeover). Alert-only: the body does not engage, so there is nothing to refuse, but the
+  # press deserves the reason.
+  EventNameSP.stockEcuNotReady: {
+    ET.WARNING: stock_ecu_not_ready_alert,
   },
 
   EventNameSP.experimentalModeSwitched: {
