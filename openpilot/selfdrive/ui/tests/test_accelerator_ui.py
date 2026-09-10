@@ -172,9 +172,14 @@ class TestUIStateAcceleratorView:
     # Loaded and waiting for a window, which on a MADS car is the rest of the
     # drive unless the driver stops. A pulsing "loading" icon through all of it
     # is what "waited for the green icon, never turned off the car" was.
+    from openpilot.selfdrive.ui.sunnypilot.ui_state import UIStateSP
     from openpilot.selfdrive.ui.ui_state import ui_state, ChestnutState
     saved = self._with(FakeSM(board=False, alive=True, recv=1, state='ready'), started=True)
     try:
+      # the status name is cached where sm is read, and update_params only copies
+      # it into the view; without this the view carries the previous 'none' and
+      # the state falls through to FAILED
+      UIStateSP.update(ui_state)
       with accelerator(present=True, ready=True, enabled=True):
         ui_state.update_params()
       ui_state._update_chestnut_state()
