@@ -178,6 +178,24 @@ class TestMultiParamValueMapping:
       w.refresh()
       assert w.value == label
 
+  def test_big_model_tune_follows_small_until_set(self, params):
+    """TorqueControlTuneBig declares no default: controlsd_ext runs the small tune on a big
+    model while it is unset, so the row must show the small selection, not option zero."""
+    from openpilot.selfdrive.ui.sunnypilot.mici.layouts.steering import SteeringLayoutMici
+    from openpilot.selfdrive.ui.sunnypilot.mici.widgets.button import BigMultiParamToggleSP
+
+    versions = SteeringLayoutMici._load_torque_versions()
+    labels = list(versions)
+    params.remove("TorqueControlTuneBig")
+    params.put("TorqueControlTune", versions[labels[-1]], block=True)
+    w = BigMultiParamToggleSP("t", "TorqueControlTuneBig", labels, values=list(versions.values()),
+                              fallback_param="TorqueControlTune")
+    assert w.value == labels[-1]
+
+    params.put("TorqueControlTuneBig", versions[labels[0]], block=True)
+    w.refresh()
+    assert w.value == labels[0]
+
 
 class TestDependentSettings:
   """A setting whose parent makes it inert must read off without losing the user's value."""

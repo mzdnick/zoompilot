@@ -24,6 +24,9 @@ TORQUE_VERSIONS_PATH = os.path.normpath(
 )
 
 
+TORQUE_TUNE_KEYS = ("TorqueControlTune", "TorqueControlTuneBig")  # one tune per model size
+
+
 def _load_torque_versions() -> dict:
   """Load latcontrol_torque_versions.json so TorqueControlTune options stay in sync."""
   try:
@@ -55,7 +58,7 @@ def _inject_dynamic_options(schema: dict) -> None:
   options = _build_torque_options(versions)
 
   def visitor(item: dict) -> None:
-    if item.get("key") == "TorqueControlTune":
+    if item.get("key") in TORQUE_TUNE_KEYS:
       item["options"] = options
 
   _walk_all_items(schema, visitor)

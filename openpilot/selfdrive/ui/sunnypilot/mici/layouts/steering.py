@@ -128,8 +128,13 @@ class SteeringLayoutMici(NavScroller):
 
     # An unset version resolves through the param default. Keep a fallback for unreadable metadata.
     tq_versions = self._load_torque_versions() or {tr("default"): 2.0}
-    self._tq_version = BigMultiParamToggleSP(tr("tune version"), "TorqueControlTune",
+    # one tune per model size; controlsd swaps them as modelV2.big changes. The big one has
+    # no declared default and follows the small one until picked.
+    self._tq_version = BigMultiParamToggleSP(tr("tune version") + "\n" + tr("small models"), "TorqueControlTune",
                                              list(tq_versions), values=list(tq_versions.values()))
+    self._tq_version_big = BigMultiParamToggleSP(tr("tune version") + "\n" + tr("big models"), "TorqueControlTuneBig",
+                                                 list(tq_versions), values=list(tq_versions.values()),
+                                                 fallback_param="TorqueControlTune")
 
     self._tq_self_tune_btn = BigButtonSP(tr("self tune"))
     self._tq_self_tune_btn.set_subtitle_font_size(24)
@@ -162,10 +167,11 @@ class SteeringLayoutMici(NavScroller):
     self._tq_items_rest = [self._tq_self_tune_btn, self._tq_custom_btn]
     for item in self._tq_items_rest:
       item.set_enabled(lambda: self._enforce_torque)
-    # controlsd selects the tune at startup.
-    self._tq_version.set_enabled(lambda: self._enforce_torque and ui_state.is_offroad())
+    # controlsd builds both tunes at startup.
+    for item in (self._tq_version, self._tq_version_big):
+      item.set_enabled(lambda: self._enforce_torque and ui_state.is_offroad())
     self._tq_view = self._torque_settings_btn.link_sub_panel([self._torque_toggle, self._jerk_aware_toggle,
-                                                              self._tq_version] + self._tq_items_rest)
+                                                              self._tq_version, self._tq_version_big] + self._tq_items_rest)
 
   @staticmethod
   def _load_torque_versions() -> dict[str, float]:
@@ -232,7 +238,7 @@ class SteeringLayoutMici(NavScroller):
                                         (tr("road-edge"), road_edge), (tr("smooth"), LC_LEVEL_LABELS[lc_level])])
 
     enforce_torque = self._enforce_torque = ui_state.params.get_bool("EnforceTorqueControl")
-    self._v2_tune = resolved_tune_version(ui_state.params) == 2.0
+    self._v2_tune = 2.0 in (resolved_tune_version(ui_state.params), resolved_tune_version(ui_state.params, big=True))
     jerk_aware = ui_state.params.get_bool("LateralJerkTorqueController")
     self_tune_on = ui_state.params.get_bool("LiveTorqueParamsToggle")
     custom_on = ui_state.params.get_bool("CustomTorqueParams")

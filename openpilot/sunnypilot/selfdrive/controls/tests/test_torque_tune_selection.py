@@ -29,6 +29,14 @@ from openpilot.common.prefix import OpenpilotPrefix
 from openpilot.sunnypilot.selfdrive.controls import controlsd_ext
 from openpilot.sunnypilot.selfdrive.controls.controlsd_ext import ControlsExt
 
+class FakeLaC(str):
+  """A controller stand-in that compares as its version label and counts resets."""
+  resets = 0
+
+  def reset(self):
+    self.resets += 1
+
+
 V0 = "v0"
 V1 = "v1"  # stands in for the `lac` upstream controller controlsd passes in
 V2 = "v2"
@@ -50,8 +58,8 @@ def compiled_default(params) -> float:
 
 @pytest.fixture
 def ctx(monkeypatch):
-  monkeypatch.setattr(controlsd_ext, "LatControlTorqueV0", lambda *a, **k: V0)
-  monkeypatch.setattr(controlsd_ext, "LatControlTorqueV2", lambda *a, **k: V2)
+  monkeypatch.setattr(controlsd_ext, "LatControlTorqueV0", lambda *a, **k: FakeLaC(V0))
+  monkeypatch.setattr(controlsd_ext, "LatControlTorqueV2", lambda *a, **k: FakeLaC(V2))
   with OpenpilotPrefix():
     params = Params()
     CP = car.CarParams.new_message(steerControlType="torque")
@@ -62,7 +70,11 @@ def ctx(monkeypatch):
 
 
 def select(controls):
-  return ControlsExt.initialize_lateral_control(controls, V1, MagicMock(), 0.01)
+  return ControlsExt.initialize_lateral_control(controls, FakeLaC(V1), MagicMock(), 0.01)
+
+
+def swap(controls, big: bool):
+  ControlsExt.select_lateral_control(controls, {'modelV2': SimpleNamespace(big=big)})
 
 
 class TestTorqueTuneSelection:
@@ -113,6 +125,47 @@ class TestTorqueTuneSelection:
     params.put_bool("EnforceTorqueControl", False, block=True)
     params.put("TorqueControlTune", version, block=True)
     assert select(controls) == V0
+
+  def test_big_model_tune_follows_small_until_set(self, ctx):
+    """An unset TorqueControlTuneBig builds no second controller: a device that never picked
+    one behaves as before the split, on both model sizes."""
+    params, controls = ctx
+    params.put_bool("EnforceTorqueControl", True, block=True)
+    params.put("TorqueControlTune", 2.0, block=True)
+    params.remove("TorqueControlTuneBig")
+    controls.LaC = select(controls)
+    assert controls._lac_big is controls._lac_small
+    swap(controls, big=True)
+    assert controls.LaC == V2 and controls.LaC.resets == 0
+
+  @pytest.mark.parametrize(("small", "big"), [(2.0, 1.0), (0.0, 2.0), (1.0, 0.0)])
+  def test_lateral_control_follows_the_model_size(self, ctx, small, big):
+    """Every drive starts on the small model's tune; the frame after modelV2.big flips runs
+    the other size's controller, reset once, and a repeated frame does not churn it."""
+    params, controls = ctx
+    params.put_bool("EnforceTorqueControl", True, block=True)
+    params.put("TorqueControlTune", small, block=True)
+    params.put("TorqueControlTuneBig", big, block=True)
+    controls.LaC = select(controls)
+    assert controls.LaC == BY_VERSION[small]
+
+    swap(controls, big=True)
+    assert controls.LaC == BY_VERSION[big] and controls.LaC.resets == 1
+    swap(controls, big=True)
+    assert controls.LaC.resets == 1
+
+    swap(controls, big=False)
+    assert controls.LaC == BY_VERSION[small] and controls.LaC.resets == 1
+
+  def test_enforce_off_ignores_the_big_tune(self, ctx):
+    """The enforce-off v0 forcing applies to both sizes."""
+    params, controls = ctx
+    params.put_bool("EnforceTorqueControl", False, block=True)
+    params.put("TorqueControlTune", 1.0, block=True)
+    params.put("TorqueControlTuneBig", 2.0, block=True)
+    controls.LaC = select(controls)
+    assert controls._lac_big is controls._lac_small
+    assert controls.LaC == V0
 
   def test_ui_default_matches_what_controls_runs(self, ctx):
     """For an unset param the MICI selector lights up the declared default (the widget itself

@@ -20,6 +20,15 @@ Mazda seed).
 | v1 | sunnypilot's current `LatControlTorque` (the `lac` controlsd built), untouched | `TorqueControlTune = 1.0` |
 | v2 | v0 plus the four mechanisms below | `TorqueControlTune = 2.0`; seeded on steer-to-zero Mazdas by `_seed_mazda_torque_defaults` (`MAZDA_STEER_TO_ZERO_TORQUE_TUNE = 2.0`) |
 
+`TorqueControlTune` is the small-model tune. `TorqueControlTuneBig` picks the tune for a big
+model (chestnut or jetlink) and follows the small one while unset, so a device that never
+picked one behaves as before the split. `controlsd_ext.initialize_lateral_control` builds one
+controller per size at startup and `select_lateral_control` swaps `self.LaC` at the end of
+any frame whose `modelV2.big` differs from the running controller's, resetting the incoming
+one. That is safe by construction: a promotion only happens disengaged, where controlsd resets
+the controller every frame anyway, and a demotion arrives with a soft disable latched until
+disengagement. The per-frame `lateralControlState.torqueState.version` records which tune ran.
+
 v2 was rewritten on the v0 base on 2026-09-01 (commit `ede6d8bb81`) after a leave-one-out
 open-loop replay of the previous v2 (routes 132 and 139 = v2 with KD, 12d and 12f = the same
 build without KD, 123 to 126 = the 08-29 v2, 125 = v0). The replay attributed each felt
