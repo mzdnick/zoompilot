@@ -16,9 +16,10 @@ class HudRendererSP(HudRenderer):
   def __init__(self):
     super().__init__()
     self.blind_spot_indicators = BlindSpotIndicators()
-    # the ring wraps the steering-wheel icon: same corner anchor, sized to clear the 50 px wheel
+    # the ring wraps the steering-wheel icon: same anchor, inner edge at the
+    # wheel's edge
     self.cylinder_deactivation = CylinderDeactivationRenderer(
-      inner_r=31.0, outer_r=38.0, corner_x=46.0, corner_y=39.0, backing=None)
+      inner_r=25.0, outer_r=38.0, corner_x=46.0, corner_y=39.0)
 
   def _update_state(self) -> None:
     super()._update_state()
