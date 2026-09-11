@@ -8,8 +8,7 @@ from collections.abc import Callable
 import pyray as rl
 
 from openpilot.selfdrive.ui.ui_state import ui_state
-from openpilot.sunnypilot.selfdrive.controls.lib.torque_tune import (TUNE_PARAM_BY_SIZE, jerk_aware_has_effect, label_for,
-                                                                      stored_tune_versions, versions_by_label)
+from openpilot.sunnypilot.selfdrive.controls.lib.torque_tune import TUNE_PARAM_BY_SIZE, label_for, stored_tune_versions, versions_by_label
 from openpilot.system.ui.lib.application import gui_app, FontWeight
 from openpilot.system.ui.lib.multilang import tr
 from openpilot.system.ui.sunnypilot.lib.utils import NoElideButtonAction
@@ -119,9 +118,7 @@ class TorqueSettingsLayout(Widget):
   def _update_state(self):
     super()._update_state()
     nnlc_enabled = ui_state.params.get_bool("NeuralNetworkLateralControl")
-    # v2 tune replaces the jerk-aware mechanisms and forces the controller off, so the
-    # toggle is disabled while v2 is the tune every model size will actually run
-    self._jerk_aware_toggle.action_item.set_enabled(ui_state.is_offroad() and not nnlc_enabled and jerk_aware_has_effect(ui_state.params))
+    self._jerk_aware_toggle.action_item.set_enabled(ui_state.is_offroad() and not nnlc_enabled)
     if not ui_state.params.get_bool("LiveTorqueParamsToggle"):
       ui_state.params.remove("LiveTorqueParamsRelaxedToggle")
       self._relaxed_tune_toggle.action_item.set_state(False)

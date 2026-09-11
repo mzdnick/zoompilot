@@ -20,7 +20,7 @@ from openpilot.selfdrive.ui.ui_state import ui_state
 from openpilot.sunnypilot.mads.helpers import MadsSteeringModeOnBrake, get_mads_limited_brands, offroad_brand
 from openpilot.sunnypilot.selfdrive.controls.lib.auto_lane_change import AUTO_LANE_CHANGE_TIMER, AutoLaneChangeMode
 from openpilot.sunnypilot.selfdrive.controls.lib.lane_change_smoothing import LEVEL_OFF, read_level
-from openpilot.sunnypilot.selfdrive.controls.lib.torque_tune import TUNE_PARAM_BY_SIZE, jerk_aware_has_effect, versions_by_label
+from openpilot.sunnypilot.selfdrive.controls.lib.torque_tune import TUNE_PARAM_BY_SIZE, versions_by_label
 from openpilot.system.ui.lib.application import gui_app
 
 MADS_STEERING_MODE_LABELS = [tr("remain"), tr("pause"), tr("disengage")]
@@ -60,7 +60,6 @@ class SteeringLayoutMici(NavScroller):
     self._alc_val = AutoLaneChangeMode.NUDGE
     self._torque_allowed = False
     self._enforce_torque = False
-    self._v2_tune = False
 
     self._mads_settings_btn = BigButtonSP(tr("mads"))
     self._lane_change_btn = BigButtonSP(tr("lane change"))
@@ -120,12 +119,10 @@ class SteeringLayoutMici(NavScroller):
                                     not ui_state.params.get_bool("NeuralNetworkLateralControl"))
 
     # Jerk-aware control is independent of EnforceTorqueControl on torque-native cars.
-    # NNLC and the v2 tune use the same controller path, so they disable this option
-    # (v2 only when every model size runs it; see torque_tune.jerk_aware_has_effect).
+    # NNLC uses the same controller path, so it disables this option.
     self._jerk_aware_toggle = BigParamControl(tr("jerk aware"), "LateralJerkTorqueController")
     self._jerk_aware_toggle.set_enabled(lambda: ui_state.is_offroad() and
-                                        not ui_state.params.get_bool("NeuralNetworkLateralControl") and
-                                        not self._v2_tune)
+                                        not ui_state.params.get_bool("NeuralNetworkLateralControl"))
 
     # An unset version resolves through the param default. Keep a fallback for unreadable metadata.
     tq_versions = versions_by_label() or {tr("default"): 2.0}
@@ -221,7 +218,6 @@ class SteeringLayoutMici(NavScroller):
                                         (tr("road-edge"), road_edge), (tr("smooth"), LC_LEVEL_LABELS[lc_level])])
 
     enforce_torque = self._enforce_torque = ui_state.params.get_bool("EnforceTorqueControl")
-    self._v2_tune = not jerk_aware_has_effect(ui_state.params)
     jerk_aware = ui_state.params.get_bool("LateralJerkTorqueController")
     self_tune_on = ui_state.params.get_bool("LiveTorqueParamsToggle")
     custom_on = ui_state.params.get_bool("CustomTorqueParams")
