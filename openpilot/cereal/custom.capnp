@@ -366,6 +366,8 @@ struct OnroadEventSP @0xda96579883444c35 {
     silentPedalPressed @27;
     mazdaStockCtsActive @28;
     stockEcuNotReady @29;
+    stockEcuInitializing @30;
+    stockEcuReady @31;
   }
 }
 
