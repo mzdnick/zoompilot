@@ -115,15 +115,14 @@ def setup_ui_state():
   ui_state.is_sp_release = False
 
 
-def capture(widget, filename, frames=SETTLE_FRAMES, keep_scroll=False):
-  """keep_scroll: leave a scroller where the caller put it instead of resetting its position."""
+def capture(widget, filename, frames=SETTLE_FRAMES):
   from openpilot.system.ui.lib.application import gui_app
 
   rt = rl.load_render_texture(gui_app.width, gui_app.height)
 
   if hasattr(widget, '_trigger_animate_in'):
     widget._trigger_animate_in = False
-  if hasattr(widget, '_pos_filter') and not keep_scroll:
+  if hasattr(widget, '_pos_filter'):
     widget._pos_filter.x = 0.0
 
   # Keep alpha opaque: blend RGB normally, but force alpha to stay at dst (1.0 from clear)

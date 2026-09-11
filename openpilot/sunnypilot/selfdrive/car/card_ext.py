@@ -34,7 +34,7 @@ class CardExt:
     helper.reconcile_setpoint_with_dash(CS)
     # publish the arbiter's session (plannerd mirrors it; the ICBM servo freezes on a prompt)
     helper.cruise_arbiter.fill_msg(CS_SP)
-    # the driver's view of the stock ECU, for the UI status line and the engage-press alert
+    # the driver's view of the stock ECU, for the engage-press alert (stockEcuNotReady)
     CS_SP.zoompilot.stockEcu = str(self.stock_ecu_state)
 
   @property

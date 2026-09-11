@@ -901,23 +901,13 @@ class TestAcceleratorLinkToggle:
       render(layout.link_toggle)
 
 
-class TestAlphaLongStatusMici:
-  """The alpha toggle's subtitle is the running session's mode; the switch itself is the
-  saved preference and only editable offroad (forced offroad included)."""
-
-  def test_subtitle_follows_the_published_status(self, params, monkeypatch):
-    from openpilot.selfdrive.ui.sunnypilot.mici.layouts.developer import DeveloperLayoutMiciSP
-    from openpilot.selfdrive.ui.ui_state import ui_state
-    layout = DeveloperLayoutMiciSP()
-    for text in ("initializing", "ready", "failed", ""):
-      monkeypatch.setattr(ui_state, "alpha_long_status", text)
-      render(layout)
-      assert layout._alpha_long_toggle.value == text
+class TestAlphaLongSwitchMici:
+  """The alpha switch is the saved preference, editable offroad only (forced offroad included)."""
 
   def test_switch_is_offroad_only(self, params, monkeypatch):
-    from openpilot.selfdrive.ui.sunnypilot.mici.layouts.developer import DeveloperLayoutMiciSP
+    from openpilot.selfdrive.ui.mici.layouts.settings.developer import DeveloperLayoutMici
     from openpilot.selfdrive.ui.ui_state import ui_state
-    layout = DeveloperLayoutMiciSP()
+    layout = DeveloperLayoutMici()
     monkeypatch.setattr(ui_state, "started", True)
     render(layout)
     assert not layout._alpha_long_toggle.enabled

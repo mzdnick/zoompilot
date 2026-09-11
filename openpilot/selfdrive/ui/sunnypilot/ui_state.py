@@ -15,7 +15,6 @@ from openpilot.selfdrive.ui.sunnypilot.layouts.settings.display import OnroadBri
 from openpilot.sunnypilot.models.helpers import ACTIVE_BUNDLE_KEYS, get_active_source
 from openpilot.sunnypilot.sunnylink.sunnylink_state import SunnylinkState
 from openpilot.system.ui.lib.application import gui_app
-from openpilot.system.ui.lib.multilang import tr
 from openpilot.system.ui.sunnypilot.widgets.screen_saver import ScreenSaverSP
 
 OpenpilotState = log.SelfdriveState.OpenpilotState
@@ -79,7 +78,6 @@ class UIStateSP:
     self.enforce_torque_control: bool = False
     self.custom_torque_params: bool = False
     self.torque_override_enabled: bool = False
-    self.alpha_long_status: str = ""
     self._sp_initialized: bool = False
 
   def update(self) -> None:
@@ -89,7 +87,6 @@ class UIStateSP:
       self.sunnylink_state.stop()
     # read where sm is updated, so the params thread never touches a message
     self._accelerator_state_name = str(self.sm['modelDataV2SP'].acceleratorState)
-    self.update_alpha_long_status()
 
   def _accelerator_state(self):
     """ChestnutState for the accelerator view: progress param offroad, modelV2 and acceleratorState onroad"""
@@ -120,18 +117,6 @@ class UIStateSP:
     if view.state == 'running':
       return ChestnutState.ACTIVE
     return ChestnutState.FAILED
-
-  def update_alpha_long_status(self) -> None:
-    """The line under the alpha longitudinal switch, the same on both device families. The
-    switch is the saved preference and only editable offroad (forced offroad included), so
-    onroad the line says what the running session's stock ECU takeover is doing, from
-    carStateSP.zoompilot.stockEcu: initializing, ready or failed. Ready never means engaged.
-    The reason behind initializing reaches the driver as an alert when they press SET."""
-    sm = self.sm
-    applied = self.started and self.CP is not None and self.CP.openpilotLongitudinalControl
-    fresh = applied and sm.alive["carStateSP"] and sm.recv_frame["carStateSP"] > self.started_frame
-    stock_ecu = str(sm["carStateSP"].zoompilot.stockEcu) if fresh else None
-    self.alpha_long_status = tr({"ready": "ready", "failed": "failed"}.get(stock_ecu, "initializing")) if applied else ""
 
   def onroad_brightness_handle_alerts(self, _ui_state, alert):
     if _ui_state.sm.recv_frame["carState"] < _ui_state.started_frame:

@@ -368,6 +368,8 @@ struct OnroadEventSP @0xda96579883444c35 {
     bigModelLinkLost @29;
     mazdaStockCtsActive @30;
     stockEcuNotReady @31;
+    stockEcuInitializing @32;
+    stockEcuReady @33;
   }
 }
 
