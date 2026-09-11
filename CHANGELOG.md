@@ -1,8 +1,6 @@
 zoompilot v2026.09.11-15
 ========================
-A steering tune for each model size
-* Torque tune version per model size. Steering settings now has "tune version / small models" and "tune version / big models". The small model keeps v2. Big models, Chestnut or Jetlink, default to v1, which held straighter with less wheel chatter in testing. The controller switches tunes the moment the big model takes over or hands back, so a link drop mid-drive also drops you back to the small-model tune.
-* The Lateral Jerk Torque Controller toggle is no longer disabled by the tune version.
+* Option to select different tune versions for small and big models. small defaults to v2 and big defaults to v1
 
 zoompilot v2026.09.10-14
 ========================
