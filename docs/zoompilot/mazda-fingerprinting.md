@@ -36,6 +36,7 @@ returns nothing. Model line is VIN positions 4 and 5 (`vin.vds[0:2]`), model yea
 | MAZDA_6 | JM1 | GL | H J K L M | 2017-21 |
 | MAZDA_CX9_2021 | JM3 | TC | M N P | 2021-23 |
 | MAZDA_CX5_2022 | JM3 | KF | N P R S | 2022-25 |
+| MAZDA_CX8_2023 | none | KG | none | 2023 |
 
 CX-5 and CX-9 share a WMI and split on the chassis code; the two CX-9 generations and the two
 CX-5 generations share WMI and chassis and split on the year code. The MAZDA_6 docs say 2017-20
