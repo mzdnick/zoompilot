@@ -52,8 +52,7 @@ class TorqueSettingsLayout(Widget):
     )
     self._torque_control_versions_big = ListItemSP(
       title=tr("Torque Control Tune Version (Big Models)"),
-      description=tr("Select the version of Torque Control Tune to use while a big model is driving. " +
-                     "Follows the small-model version until set."),
+      description=tr("Select the version of Torque Control Tune to use while a big model is driving."),
       action_item=NoElideButtonAction(tr("SELECT")),
       callback=lambda: self._show_torque_version_dialog("TorqueControlTuneBig"),
     )
@@ -168,11 +167,8 @@ class TorqueSettingsLayout(Widget):
 
   def _get_current_torque_version_label(self, param: str):
     # unset resolves through the declared param default, the same read controlsd_ext makes:
-    # showing a "Default" placeholder instead would hide which tune the car actually runs.
-    # The big-model param has no default and follows the small one while unset.
+    # showing a "Default" placeholder instead would hide which tune the car actually runs
     current_val_bytes = ui_state.params.get(param, return_default=True)
-    if current_val_bytes is None and param == "TorqueControlTuneBig":
-      current_val_bytes = ui_state.params.get("TorqueControlTune", return_default=True)
     try:
       current_val = float(current_val_bytes)
       for label, info in self.cached_torque_versions.items():

@@ -128,13 +128,11 @@ class SteeringLayoutMici(NavScroller):
 
     # An unset version resolves through the param default. Keep a fallback for unreadable metadata.
     tq_versions = self._load_torque_versions() or {tr("default"): 2.0}
-    # one tune per model size; controlsd swaps them as modelV2.big changes. The big one has
-    # no declared default and follows the small one until picked.
+    # one tune per model size; controlsd swaps them as modelV2.big changes
     self._tq_version = BigMultiParamToggleSP(tr("tune version") + "\n" + tr("small models"), "TorqueControlTune",
                                              list(tq_versions), values=list(tq_versions.values()))
     self._tq_version_big = BigMultiParamToggleSP(tr("tune version") + "\n" + tr("big models"), "TorqueControlTuneBig",
-                                                 list(tq_versions), values=list(tq_versions.values()),
-                                                 fallback_param="TorqueControlTune")
+                                                 list(tq_versions), values=list(tq_versions.values()))
 
     self._tq_self_tune_btn = BigButtonSP(tr("self tune"))
     self._tq_self_tune_btn.set_subtitle_font_size(24)

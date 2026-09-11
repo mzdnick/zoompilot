@@ -178,23 +178,16 @@ class TestMultiParamValueMapping:
       w.refresh()
       assert w.value == label
 
-  def test_big_model_tune_follows_small_until_set(self, params):
-    """TorqueControlTuneBig declares no default: controlsd_ext runs the small tune on a big
-    model while it is unset, so the row must show the small selection, not option zero."""
+  def test_big_tune_unset_shows_declared_default(self, params):
+    """The big-model row resolves through its own declared default (v1), like the small one."""
     from openpilot.selfdrive.ui.sunnypilot.mici.layouts.steering import SteeringLayoutMici
     from openpilot.selfdrive.ui.sunnypilot.mici.widgets.button import BigMultiParamToggleSP
 
     versions = SteeringLayoutMici._load_torque_versions()
-    labels = list(versions)
     params.remove("TorqueControlTuneBig")
-    params.put("TorqueControlTune", versions[labels[-1]], block=True)
-    w = BigMultiParamToggleSP("t", "TorqueControlTuneBig", labels, values=list(versions.values()),
-                              fallback_param="TorqueControlTune")
-    assert w.value == labels[-1]
-
-    params.put("TorqueControlTuneBig", versions[labels[0]], block=True)
-    w.refresh()
-    assert w.value == labels[0]
+    w = BigMultiParamToggleSP("t", "TorqueControlTuneBig", list(versions), values=list(versions.values()))
+    assert versions[w.value] == pytest.approx(float(params.get("TorqueControlTuneBig", return_default=True)))
+    assert versions[w.value] != pytest.approx(float(params.get("TorqueControlTune", return_default=True)))
 
 
 class TestDependentSettings:

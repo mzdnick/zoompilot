@@ -523,7 +523,7 @@
                   "key": "TorqueControlTuneBig",
                   "widget": "multiple_button",
                   "title": "Torque Control Tune Version (Big Models)",
-                  "description": "Select the version of Torque Control Tune to use while a big model is driving. Follows the small-model version until set.",
+                  "description": "Select the version of Torque Control Tune to use while a big model is driving.",
                   "enablement": [
                     {
                       "type": "offroad_only"

@@ -22,21 +22,15 @@ def load_versions() -> dict:
 
 def resolved_tune_version(params, torque_lateral_tuning: bool = True, big: bool = False) -> float | None:
   """The tune version the controller will actually run under the small model, or under a
-  big model with big=True, or None for the upstream controller. Encodes three rules that
+  big model with big=True, or None for the upstream controller. Encodes two rules that
   are easy to re-implement wrong:
 
   - With EnforceTorqueControl off, torque-tuned cars run v0 regardless of the stored
-    TorqueControlTune (FIXME-SP: revert when upstream fixes tuning issues with v1),
-    and non-torque cars run the upstream controller.
-  - An unset TorqueControlTune must resolve through the declared param default (2.0):
-    a bare params.get() returns None for an unset param, and float(None) raises.
-  - TorqueControlTuneBig declares no default: unset, a big model runs the small tune, so
-    a device that never picked one behaves as before the split.
+    tune (FIXME-SP: revert when upstream fixes tuning issues with v1), and non-torque cars
+    run the upstream controller.
+  - An unset param must resolve through its declared default (v2 small, v1 big): a bare
+    params.get() returns None for an unset param, and float(None) raises.
   """
   if not params.get_bool("EnforceTorqueControl"):
     return 0.0 if torque_lateral_tuning else None
-  if big:
-    version = params.get("TorqueControlTuneBig")
-    if version is not None:
-      return float(version)
-  return float(params.get("TorqueControlTune", return_default=True))
+  return float(params.get("TorqueControlTuneBig" if big else "TorqueControlTune", return_default=True))

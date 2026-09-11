@@ -190,15 +190,12 @@ class BigParamControlSP(BigParamControl):
 class BigMultiParamToggleSP(BigMultiParamToggle):
   """BigMultiParamToggle with bounded reads, refresh, and dynamic pill spacing.
 
-  When supplied, `values` maps each option to its stored value instead of its list index,
-  and `fallback_param` is read (through its declared default) while `param` is unset.
+  When supplied, `values` maps each option to its stored value instead of its list index.
   """
 
-  def __init__(self, text: str, param: str, options: list[str], values: list | None = None,
-               fallback_param: str | None = None, **kwargs):
+  def __init__(self, text: str, param: str, options: list[str], values: list | None = None, **kwargs):
     assert values is None or len(values) == len(options)
     self._values = values  # BigMultiParamToggle.__init__ calls _load_value
-    self._fallback_param = fallback_param
     super().__init__(text, param, options, **kwargs)
 
   def _draw_content(self, btn_y: float):
@@ -221,12 +218,9 @@ class BigMultiParamToggleSP(BigMultiParamToggle):
     return max(0, min(int(idx), len(self._options) - 1))
 
   def _index_from_value(self) -> int:
-    """Match the stored value against self._values; unset resolves to the param's declared
-    default, or to the fallback param when there is none."""
+    """Match the stored value against self._values; unset resolves to the param's declared default."""
     assert self._values is not None
     raw = self._params.get(self._param, return_default=True)
-    if raw is None and self._fallback_param is not None:
-      raw = self._params.get(self._fallback_param, return_default=True)
     for i, val in enumerate(self._values):
       try:
         if math.isclose(float(val), float(raw), rel_tol=1e-5):

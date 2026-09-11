@@ -9,8 +9,9 @@ See the LICENSE.md file in the root directory for more details.
 # dropping `return_default=True` from the params read: params_keys.h declares a default, but
 # a bare params.get() returns None for an unset param, and float(None) raises, or, guarded,
 # can otherwise fall through to the upstream controller without an explicit error.
-# The declared default is upstream's 0.0; the steer-to-zero Mazdas are seeded to 2.0 by
-# _seed_mazda_torque_defaults instead, so other brands never inherit a tune fitted to that EPS.
+# The declared defaults are v2 for the small model and v1 for a big one (2026-09-11); the
+# steer-to-zero Mazdas are also seeded to 2.0 by _seed_mazda_torque_defaults, which moves
+# devices that materialized the earlier 0.0 default.
 #
 # The v0 constructor is patched out: these tests pin the branch that gets taken, not the
 # controller's behavior, and building the real one pulls in NNLC model loading.
@@ -44,16 +45,16 @@ BY_VERSION = {0.0: V0, 1.0: V1, 2.0: V2}
 PARAMS_KEYS_H = Path(__file__).resolve().parents[5] / "openpilot" / "common" / "params_keys.h"
 
 
-def declared_default() -> float:
+def declared_default(key: str = "TorqueControlTune") -> float:
   """The default params_keys.h declares, read from the header text so the test does not
   depend on the compiled params library being current."""
-  m = re.search(r'\{"TorqueControlTune", \{[^}]*, "([0-9.]+)"\}\}', PARAMS_KEYS_H.read_text())
-  assert m, "TorqueControlTune must declare a default in params_keys.h"
+  m = re.search(r'\{"' + key + r'", \{[^}]*, "([0-9.]+)"\}\}', PARAMS_KEYS_H.read_text())
+  assert m, f"{key} must declare a default in params_keys.h"
   return float(m.group(1))
 
 
-def compiled_default(params) -> float:
-  return float(params.get("TorqueControlTune", return_default=True))
+def compiled_default(params, key: str = "TorqueControlTune") -> float:
+  return float(params.get(key, return_default=True))
 
 
 @pytest.fixture
@@ -78,10 +79,10 @@ def swap(controls, big: bool):
 
 
 class TestTorqueTuneSelection:
-  def test_declared_default_is_upstreams(self):
-    """Other brands must not inherit the Mazda tune through the param default; the Mazdas
-    are seeded explicitly (test_torque_defaults_seed.py)."""
-    assert declared_default() == 0.0
+  def test_declared_defaults(self):
+    """v2 for the small model, v1 for a big one."""
+    assert declared_default("TorqueControlTune") == 2.0
+    assert declared_default("TorqueControlTuneBig") == 1.0
 
   def test_unset_selects_the_declared_default(self, ctx):
     """An unset param must resolve through params_keys.h (v0 today), not through None."""
@@ -126,13 +127,26 @@ class TestTorqueTuneSelection:
     params.put("TorqueControlTune", version, block=True)
     assert select(controls) == V0
 
-  def test_big_model_tune_follows_small_until_set(self, ctx):
-    """An unset TorqueControlTuneBig builds no second controller: a device that never picked
-    one behaves as before the split, on both model sizes."""
+  def test_unset_big_tune_selects_its_declared_default(self, ctx):
+    """An unset TorqueControlTuneBig resolves through params_keys.h (v1), not through the
+    small tune and not through None."""
+    params, controls = ctx
+    params.put_bool("EnforceTorqueControl", True, block=True)
+    params.remove("TorqueControlTune")
+    params.remove("TorqueControlTuneBig")
+    for key in ("TorqueControlTune", "TorqueControlTuneBig"):
+      if compiled_default(params, key) != declared_default(key):
+        pytest.skip("libparams_c is stale against params_keys.h; rebuild with scons openpilot/common")
+    controls.LaC = select(controls)
+    assert controls.LaC == BY_VERSION[declared_default("TorqueControlTune")]
+    swap(controls, big=True)
+    assert controls.LaC == BY_VERSION[declared_default("TorqueControlTuneBig")]
+
+  def test_same_tune_for_both_sizes_builds_one_controller(self, ctx):
     params, controls = ctx
     params.put_bool("EnforceTorqueControl", True, block=True)
     params.put("TorqueControlTune", 2.0, block=True)
-    params.remove("TorqueControlTuneBig")
+    params.put("TorqueControlTuneBig", 2.0, block=True)
     controls.LaC = select(controls)
     assert controls._lac_big is controls._lac_small
     swap(controls, big=True)
