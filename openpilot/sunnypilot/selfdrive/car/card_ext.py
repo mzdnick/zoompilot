@@ -21,11 +21,16 @@ class CardExt:
   def __init__(self, CP: structs.CarParams, CP_SP: structs.CarParamsSP, params: Params, sm, v_cruise_helper, CI) -> None:
     self.sm = sm
     self.v_cruise_helper = v_cruise_helper
+    self.CI = CI
     # The stock ECU transition contract (opendbc/sunnypilot/car/stock_ecu.py): a controller that
     # silences a stock ECU under openpilot longitudinal exposes `stock_ecu_state`; nothing
     # brand-specific is read here. The hand-back server answers the lifecycle's requests off it.
     self.controller = CI.CC
     self.handback = StockEcuHandBackServer(params)
+    # onroad AlphaLongitudinalEnabled changes: sequence any ECU hand-back, then cycle. The
+    # session manager's own result is the acknowledgment, not a driver-facing fault bit.
+    stock_ecu_session = CI.CC.radar_session if CP.brand == "mazda" and CP.openpilotLongitudinalControl else None
+    self.alpha_long_monitor = AlphaLongToggleMonitor(CP, params, stock_ecu_session)
 
   def update_v_cruise_post(self, CS, CS_SP) -> None:
     helper = self.v_cruise_helper
@@ -40,6 +45,13 @@ class CardExt:
   @property
   def stock_ecu_state(self) -> StockEcuState:
     return getattr(self.controller, "stock_ecu_state", StockEcuState.NOT_NEEDED)
+
+  def fill_cylinder_deactivation(self, CS_SP) -> None:
+    # The Mazda port computes the cylinder status from MORE_GAS; publish it next to
+    # cruiseSession the same way. Normal on cars that never leave the all-cylinder status.
+    cyl = CS_SP.zoompilot.cylinderDeactivation
+    cyl.state = self.CI.CS.cyl_state
+    cyl.entryProgress = float(self.CI.CS.cyl_entry_progress)
 
   def controls_update(self, CS, CC, CC_SP: structs.CarControlSP) -> structs.CarControlSP:
     """Runs just before CI.apply on the converted CarControlSP struct, which it may edit."""
