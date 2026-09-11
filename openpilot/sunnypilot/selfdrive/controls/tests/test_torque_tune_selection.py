@@ -53,8 +53,10 @@ def declared_default(key: str = "TorqueControlTune") -> float:
   return float(m.group(1))
 
 
-def compiled_default(params, key: str = "TorqueControlTune") -> float:
-  return float(params.get(key, return_default=True))
+def require_current_libparams(params, *keys: str) -> None:
+  for key in keys:
+    if float(params.get(key, return_default=True)) != declared_default(key):
+      pytest.skip("libparams_c is stale against params_keys.h; rebuild with scons openpilot/common")
 
 
 @pytest.fixture
@@ -63,6 +65,7 @@ def ctx(monkeypatch):
   monkeypatch.setattr(controlsd_ext, "LatControlTorqueV2", lambda *a, **k: FakeLaC(V2))
   with OpenpilotPrefix():
     params = Params()
+    params.put_bool("EnforceTorqueControl", True, block=True)  # the enforce-off tests flip it
     CP = car.CarParams.new_message(steerControlType="torque")
     CP.lateralTuning.init('torque')
     controls = SimpleNamespace(params=params, CP=CP.as_reader(),
@@ -71,7 +74,9 @@ def ctx(monkeypatch):
 
 
 def select(controls):
-  return ControlsExt.initialize_lateral_control(controls, FakeLaC(V1), MagicMock(), 0.01)
+  """What controlsd does at startup: build and install the small model's controller."""
+  controls.LaC = ControlsExt.initialize_lateral_control(controls, FakeLaC(V1), MagicMock(), 0.01)
+  return controls.LaC
 
 
 def swap(controls, big: bool):
@@ -87,16 +92,13 @@ class TestTorqueTuneSelection:
   def test_unset_selects_the_declared_default(self, ctx):
     """An unset param must resolve through params_keys.h (v0 today), not through None."""
     params, controls = ctx
-    params.put_bool("EnforceTorqueControl", True, block=True)
     params.remove("TorqueControlTune")
-    if compiled_default(params) != declared_default():
-      pytest.skip("libparams_c is stale against params_keys.h; rebuild with scons openpilot/common")
+    require_current_libparams(params, "TorqueControlTune")
     assert select(controls) == BY_VERSION[declared_default()]
 
   @pytest.mark.parametrize(("version", "expected"), [(0.0, V0), (1.0, V1), (2.0, V2)])
   def test_explicit_version_is_honored(self, ctx, version, expected):
     params, controls = ctx
-    params.put_bool("EnforceTorqueControl", True, block=True)
     params.put("TorqueControlTune", version, block=True)
     assert select(controls) == expected
 
@@ -111,7 +113,6 @@ class TestTorqueTuneSelection:
     assert declared == set(wired), "declared tune versions must match the wired controllers"
 
     params, controls = ctx
-    params.put_bool("EnforceTorqueControl", True, block=True)
     for version, expected in wired.items():
       params.put("TorqueControlTune", version, block=True)
       assert select(controls) == expected
@@ -131,24 +132,18 @@ class TestTorqueTuneSelection:
     """An unset TorqueControlTuneBig resolves through params_keys.h (v1), not through the
     small tune and not through None."""
     params, controls = ctx
-    params.put_bool("EnforceTorqueControl", True, block=True)
-    params.remove("TorqueControlTune")
+    params.put("TorqueControlTune", 2.0, block=True)
     params.remove("TorqueControlTuneBig")
-    for key in ("TorqueControlTune", "TorqueControlTuneBig"):
-      if compiled_default(params, key) != declared_default(key):
-        pytest.skip("libparams_c is stale against params_keys.h; rebuild with scons openpilot/common")
-    controls.LaC = select(controls)
-    assert controls.LaC == BY_VERSION[declared_default("TorqueControlTune")]
+    require_current_libparams(params, "TorqueControlTuneBig")
+    select(controls)
     swap(controls, big=True)
     assert controls.LaC == BY_VERSION[declared_default("TorqueControlTuneBig")]
 
-  def test_same_tune_for_both_sizes_builds_one_controller(self, ctx):
+  def test_same_tune_for_both_sizes_never_swaps(self, ctx):
     params, controls = ctx
-    params.put_bool("EnforceTorqueControl", True, block=True)
     params.put("TorqueControlTune", 2.0, block=True)
     params.put("TorqueControlTuneBig", 2.0, block=True)
-    controls.LaC = select(controls)
-    assert controls._lac_big is controls._lac_small
+    select(controls)
     swap(controls, big=True)
     assert controls.LaC == V2 and controls.LaC.resets == 0
 
@@ -157,11 +152,9 @@ class TestTorqueTuneSelection:
     """Every drive starts on the small model's tune; the frame after modelV2.big flips runs
     the other size's controller, reset once, and a repeated frame does not churn it."""
     params, controls = ctx
-    params.put_bool("EnforceTorqueControl", True, block=True)
     params.put("TorqueControlTune", small, block=True)
     params.put("TorqueControlTuneBig", big, block=True)
-    controls.LaC = select(controls)
-    assert controls.LaC == BY_VERSION[small]
+    assert select(controls) == BY_VERSION[small]
 
     swap(controls, big=True)
     assert controls.LaC == BY_VERSION[big] and controls.LaC.resets == 1
@@ -177,21 +170,20 @@ class TestTorqueTuneSelection:
     params.put_bool("EnforceTorqueControl", False, block=True)
     params.put("TorqueControlTune", 1.0, block=True)
     params.put("TorqueControlTuneBig", 2.0, block=True)
-    controls.LaC = select(controls)
-    assert controls._lac_big is controls._lac_small
-    assert controls.LaC == V0
+    assert select(controls) == V0
+    swap(controls, big=True)
+    assert controls.LaC == V0 and controls.LaC.resets == 0
 
   def test_ui_default_matches_what_controls_runs(self, ctx):
     """For an unset param the MICI selector lights up the declared default (the widget itself
     is pinned by test_torque_tune_unset_shows_declared_default); that version must be the one
     initialize_lateral_control picks, or the UI claims a tune the car isn't running."""
-    from openpilot.selfdrive.ui.sunnypilot.mici.layouts.steering import SteeringLayoutMici
+    from openpilot.sunnypilot.selfdrive.controls.lib.torque_tune import versions_by_label
 
     params, controls = ctx
-    params.put_bool("EnforceTorqueControl", True, block=True)
     params.remove("TorqueControlTune")
 
     shown = float(params.get("TorqueControlTune", return_default=True))
-    assert shown in set(SteeringLayoutMici._load_torque_versions().values()), \
+    assert shown in set(versions_by_label().values()), \
       "the declared default must be a version the selectors offer"
     assert BY_VERSION[shown] == select(controls)

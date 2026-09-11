@@ -24,16 +24,7 @@ from openpilot.sunnypilot.selfdrive.controls.lib.lane_change_smoothing import La
 from openpilot.sunnypilot.selfdrive.controls.lib.latcontrol_torque_v0 import LatControlTorque as LatControlTorqueV0
 from openpilot.sunnypilot.selfdrive.controls.lib.latcontrol_torque_v2 import LatControlTorque as LatControlTorqueV2
 from openpilot.sunnypilot.selfdrive.controls.lib.steer_limit import classify
-from openpilot.sunnypilot.selfdrive.controls.lib.torque_tune import resolved_tune_version
-
-
-def _build_lateral_control(version, CP, CP_SP, lac, CI, dt):
-  if version == 0.0:  # v0
-    return LatControlTorqueV0(CP, CP_SP, CI, dt)
-  elif version == 2.0:  # v2
-    return LatControlTorqueV2(CP, CP_SP, CI, dt)
-  else:
-    return lac
+from openpilot.sunnypilot.selfdrive.controls.lib.torque_tune import resolved_tune_versions
 
 
 class ControlsExt(ModelStateBase):
@@ -61,17 +52,22 @@ class ControlsExt(ModelStateBase):
     self.pm_services_ext = ['carControlSP']
 
   def initialize_lateral_control(self, lac, CI, dt):
-    """One controller per model size, built once: every drive starts on the small model,
-    and select_lateral_control swaps to the big-model one as modelV2.big changes."""
-    # the enforce-off v0 forcing and the unset-param default both live in the resolver,
+    """One controller per model size, built once; every drive starts on the small model's."""
+    # the enforce-off v0 forcing and the unset-param defaults both live in the resolver,
     # shared with the settings UIs so they gate on the tune that will actually run
-    torque = self.CP.lateralTuning.which() == 'torque'
-    small = resolved_tune_version(self.params, torque)
-    big = resolved_tune_version(self.params, torque, big=True)
-    self._lac_small = _build_lateral_control(small, self.CP, self.CP_SP, lac, CI, dt)
-    self._lac_big = self._lac_small if big == small else _build_lateral_control(big, self.CP, self.CP_SP, lac, CI, dt)
-    self._lac_by_size = {False: self._lac_small, True: self._lac_big}
-    return self._lac_small
+    versions = resolved_tune_versions(self.params, self.CP.lateralTuning.which() == 'torque')
+
+    def build(version):
+      if version == 0.0:
+        return LatControlTorqueV0(self.CP, self.CP_SP, CI, dt)
+      if version == 2.0:
+        return LatControlTorqueV2(self.CP, self.CP_SP, CI, dt)
+      return lac
+
+    built = {version: build(version) for version in dict.fromkeys(versions.values())}
+    self._lac_by_size = {big: built[version] for big, version in versions.items()}
+    self._lacs = tuple(built.values())
+    return self._lac_by_size[False]
 
   def select_lateral_control(self, sm: messaging.SubMaster) -> None:
     """Runs at the end of every frame. modelV2.big says which model produced the frame; a
@@ -79,13 +75,14 @@ class ControlsExt(ModelStateBase):
     disengaged, where controlsd resets the controller every frame anyway; a demotion arrives
     with a soft disable latched until disengagement. The next state_control pushes the live
     torque params, modelV2 and the lag into the incoming controller before it runs."""
-    if self._lac_big is self._lac_small:
+    if len(self._lacs) == 1:
       return
     big = bool(sm['modelV2'].big)
-    if self._lac_by_size[big] is self.LaC:
+    lac = self._lac_by_size[big]
+    if lac is self.LaC:
       return
-    self.LaC = self._lac_by_size[big]
-    self.LaC.reset()
+    self.LaC = lac
+    lac.reset()
     cloudlog.warning("controlsd: %s model, swapped to its torque tune", "big" if big else "small")
 
   def get_params_sp(self, sm: messaging.SubMaster) -> None:
@@ -208,10 +205,9 @@ class ControlsExt(ModelStateBase):
       # torqued_ext publishes the bins beside every upstream message on the fork service;
       # one that has not checked out counts as no bins
       tp_sp = sm[LIVE_TORQUE_PARAMETERS_SP_SERVICE] if sm.all_checks([LIVE_TORQUE_PARAMETERS_SP_SERVICE]) else None
-      # both sizes' controllers, so the idle one holds current bins when it takes over
-      for lac in dict.fromkeys(self._lac_by_size.values()):
-        if hasattr(lac, 'extension'):
-          # handles activation AND deactivation: useParams off or empty bins de-assert
-          lac.extension.update_speed_dep_torque(tp, tp_sp)
+      # both sizes' controllers, so the idle one holds current bins when it takes over.
+      # handles activation AND deactivation: useParams off or empty bins de-assert
+      for lac in self._lacs:
+        lac.extension.update_speed_dep_torque(tp, tp_sp)
 
     self.select_lateral_control(sm)

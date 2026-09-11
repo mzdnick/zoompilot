@@ -16,7 +16,7 @@ Mazda seed).
 
 | version | what it is | selected by |
 |---|---|---|
-| v0 | sunnypilot's `latcontrol_torque_v0.py`: setpoint == the live request, error corrected in lateral-accel space, the extension owning the feedforward params. Byte-identical to sunnypilot's; the only change it sees is the corrected `steer_limited_by_safety` flag from the classifier. | `TorqueControlTune = 0.0`, and any torque car with Enforce Torque Control off (`torque_tune.resolved_tune_version`) |
+| v0 | sunnypilot's `latcontrol_torque_v0.py`: setpoint == the live request, error corrected in lateral-accel space, the extension owning the feedforward params. Byte-identical to sunnypilot's; the only change it sees is the corrected `steer_limited_by_safety` flag from the classifier. | `TorqueControlTune = 0.0`, and any torque car with Enforce Torque Control off (`torque_tune.resolved_tune_versions`) |
 | v1 | sunnypilot's current `LatControlTorque` (the `lac` controlsd built), untouched | `TorqueControlTune = 1.0` |
 | v2 | v0 plus the four mechanisms below | `TorqueControlTune = 2.0`, the declared default; also seeded on steer-to-zero Mazdas by `_seed_mazda_torque_defaults` (`MAZDA_STEER_TO_ZERO_TORQUE_TUNE = 2.0`) for devices that materialized the earlier 0.0 |
 

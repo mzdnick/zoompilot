@@ -159,35 +159,25 @@ class TestMultiParamValueMapping:
     assert w.value == ALC_LABELS[AutoLaneChangeMode.OFF]
     assert params.get("AutoLaneChangeTimer") == AutoLaneChangeMode.OFF
 
-  def test_torque_tune_unset_shows_declared_default(self, params):
+  @pytest.mark.parametrize("key", ["TorqueControlTune", "TorqueControlTuneBig"])
+  def test_torque_tune_unset_shows_declared_default(self, params, key):
     """controlsd_ext resolves an unset param through the params_keys.h default with
-    return_default, so the selector must agree. If these drift, the UI claims a tune the car
-    isn't running."""
-    from openpilot.selfdrive.ui.sunnypilot.mici.layouts.steering import SteeringLayoutMici
+    return_default, so each size's selector must agree. If these drift, the UI claims a tune
+    the car isn't running."""
     from openpilot.selfdrive.ui.sunnypilot.mici.widgets.button import BigMultiParamToggleSP
+    from openpilot.sunnypilot.selfdrive.controls.lib.torque_tune import versions_by_label
 
-    versions = SteeringLayoutMici._load_torque_versions()
+    versions = versions_by_label()
     assert list(versions.values()) == sorted(versions.values()), "must be oldest-first"
 
-    params.remove("TorqueControlTune")
-    w = BigMultiParamToggleSP("t", "TorqueControlTune", list(versions), values=list(versions.values()))
-    assert versions[w.value] == pytest.approx(float(params.get("TorqueControlTune", return_default=True)))
+    params.remove(key)
+    w = BigMultiParamToggleSP("t", key, list(versions), values=list(versions.values()))
+    assert versions[w.value] == pytest.approx(float(params.get(key, return_default=True)))
 
     for label, version in versions.items():
-      params.put("TorqueControlTune", version, block=True)
+      params.put(key, version, block=True)
       w.refresh()
       assert w.value == label
-
-  def test_big_tune_unset_shows_declared_default(self, params):
-    """The big-model row resolves through its own declared default (v1), like the small one."""
-    from openpilot.selfdrive.ui.sunnypilot.mici.layouts.steering import SteeringLayoutMici
-    from openpilot.selfdrive.ui.sunnypilot.mici.widgets.button import BigMultiParamToggleSP
-
-    versions = SteeringLayoutMici._load_torque_versions()
-    params.remove("TorqueControlTuneBig")
-    w = BigMultiParamToggleSP("t", "TorqueControlTuneBig", list(versions), values=list(versions.values()))
-    assert versions[w.value] == pytest.approx(float(params.get("TorqueControlTuneBig", return_default=True)))
-    assert versions[w.value] != pytest.approx(float(params.get("TorqueControlTune", return_default=True)))
 
 
 class TestDependentSettings:
