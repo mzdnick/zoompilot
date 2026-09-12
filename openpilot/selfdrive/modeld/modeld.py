@@ -37,6 +37,7 @@ from openpilot.selfdrive.modeld.helpers import (chestnut_present, chestnut_compi
                                                 check_modeld_pkl, check_camera_jit)
 
 from openpilot.sunnypilot import accelerators
+from openpilot.sunnypilot.accelerators import chestnut as chestnut_accel
 from openpilot.sunnypilot.livedelay.helpers import get_lat_delay
 from openpilot.sunnypilot.modeld_v2.modeld_base import ModelStateBase
 from openpilot.sunnypilot.selfdrive.controls.lib.relc import RoadEdgeLaneChangeController
@@ -302,7 +303,11 @@ def main(demo=False):
     def load_big():
       nonlocal big_model
       try:
-        m = ModelState(vipc_client_main.width, vipc_client_main.height, True)
+        # tici/tizi: the frame is point-sampled before it crosses USB. mici and any
+        # device without a board take the stock path unchanged
+        m = (chestnut_accel.make_model_state(vipc_client_main.width, vipc_client_main.height)
+             if chestnut_accel.supported() else
+             ModelState(vipc_client_main.width, vipc_client_main.height, True))
         m.warmup()
         big_model = m
       except Exception:

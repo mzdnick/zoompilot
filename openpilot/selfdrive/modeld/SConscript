@@ -7,6 +7,7 @@ from openpilot.common.file_chunker import chunk_file, get_chunk_targets, get_exi
 from openpilot.common.transformations.camera import _ar_ox_fisheye, _os_fisheye
 from openpilot.common.transformations.model import MEDMODEL_INPUT_SIZE, DM_INPUT_SIZE
 from openpilot.selfdrive.modeld.constants import ModelConstants
+from openpilot.sunnypilot.accelerators.chestnut.reduce import pick_scale, reduced_size
 from openpilot.selfdrive.modeld.helpers import TG_INPUT_DEVICES_PATH, chestnut_present, modeld_pkl_path
 from openpilot.sunnypilot.models.compile_ref import MODELD_COMPILE_SCRIPTS, DM_WARP_COMPILE_SCRIPTS
 
@@ -37,9 +38,11 @@ if arch == 'comma_arm64':
   else:
     camera = _os_fisheye if HARDWARE.get_device_type() == "mici" else _ar_ox_fisheye
     camera_configs = [(camera.width, camera.height)]
+  device_type = HARDWARE.get_device_type()
   tg_backend = 'QCOM'
   tg_flags = f'DEV={tg_backend} IMAGE=1 FLOAT16=1 NOLOCALS=1 JIT_BATCH_SIZE=0 OPENPILOT_HACKS=1'
 else:
+  device_type = None
   camera_configs = [(c.width, c.height) for c in (_ar_ox_fisheye, _os_fisheye)]
   tg_backend = 'CPU'
   tg_flags = f'DEV=CPU' if arch == 'Darwin' else 'DEV=CPU:LLVM'
@@ -51,6 +54,10 @@ tg_devices = { # which device to put jit inputs to at runtime
 }
 
 CHESTNUT = chestnut_present()
+# tici/tizi only: modeld point-samples the frame before it crosses USB to the board,
+# so the big-model jit is built for the reduced geometry. mici stays native: its frame
+# is already inside the link budget.
+CHESTNUT_REDUCE = CHESTNUT and device_type in ('tici', 'tizi')
 if CHESTNUT:
   chestnut_tg_flags = 'DEBUG=1 DEV=USB+AMD:LLVM FRAME_DEV=CPU FLOAT16=1 JIT_BATCH_SIZE=0 GMMU=0 TC_OPT=2 TC_OCCUPANCY_OPT=1'
   # the USB+AMD GPU takes an exclusive flock; serialize all targets that touch it
@@ -80,7 +87,11 @@ if not os.getenv('SKIP_TINYGRAD_COMPILE'):
     target_pkl_path = File(modeld_pkl_path(chestnut)).abspath
     file_prefix, cmd_flags = ('big_', chestnut_tg_flags) if chestnut else ('', tg_flags)
     driving_onnx_deps = get_existing_chunks(File(f"models/{file_prefix}driving_supercombo.onnx").abspath)
-    camera_res_args = ' '.join(f'{cw}x{ch}' for cw, ch in camera_configs)
+    # the same pick_scale the runtime calls, per camera resolution, so a build carrying
+    # several cameras leaves the ones already inside the budget at their native size
+    target_camera_configs = ([reduced_size(cw, ch, pick_scale(cw, ch)) for cw, ch in camera_configs]
+                             if chestnut and CHESTNUT_REDUCE else camera_configs)
+    camera_res_args = ' '.join(f'{cw}x{ch}' for cw, ch in target_camera_configs)
     # CPU 7 is isolated with isolcpus on AGNOS, so explicitly pin the compiler to it.
     taskset = 'taskset -c 7 ' if arch == 'comma_arm64' else ''
     cmd = (f'{cmd_flags} {mac_brew_string} {taskset}python3 {modeld_dir}/compile_modeld.py '
