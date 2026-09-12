@@ -27,10 +27,6 @@ class CardExt:
     # brand-specific is read here. The hand-back server answers the lifecycle's requests off it.
     self.controller = CI.CC
     self.handback = StockEcuHandBackServer(params)
-    # onroad AlphaLongitudinalEnabled changes: sequence any ECU hand-back, then cycle. The
-    # session manager's own result is the acknowledgment, not a driver-facing fault bit.
-    stock_ecu_session = CI.CC.radar_session if CP.brand == "mazda" and CP.openpilotLongitudinalControl else None
-    self.alpha_long_monitor = AlphaLongToggleMonitor(CP, params, stock_ecu_session)
 
   def update_v_cruise_post(self, CS, CS_SP) -> None:
     helper = self.v_cruise_helper
