@@ -585,7 +585,7 @@ struct CarStateZP @0xc879af11c43cb400 {
   # engineBraking is inferred from pedal and decel: the PCM byte reports "all
   # cylinders" during fuel cut, so that state cannot come from the byte itself.
   # Stays normal on engines without deactivation hardware.
-  cylinderDeactivation @1 :CylinderDeactivation;
+  cylinderDeactivation @2 :CylinderDeactivation;
 
   struct CylinderDeactivation {
     state @0 :State;
