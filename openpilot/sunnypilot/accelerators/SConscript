@@ -18,6 +18,17 @@ lenv = env.Clone()
 basedir = env.Dir("#").abspath
 
 
+def chestnut_warp_split() -> bool:
+  """Does this device's chestnut need the comma-side warp? tici/tizi with a board.
+
+  The same question modeld/SConscript's CHESTNUT_WARP_SPLIT asks. A device with no
+  board, or a mici with one, never gets here and builds nothing extra.
+  """
+  from openpilot.common.hardware import HARDWARE
+  from openpilot.selfdrive.modeld.helpers import chestnut_present
+  return chestnut_present() and HARDWARE.get_device_type() in ('tici', 'tizi')
+
+
 def jetlink_installed() -> bool:
   """Is the jetlink submodule checked out? An empty jetlink_repo/ has no package in it."""
   return os.path.isdir(os.path.join(basedir, 'jetlink_repo', 'jetlink'))
@@ -25,7 +36,7 @@ def jetlink_installed() -> bool:
 
 # comma GPU only: the pickle is captured against Device.DEFAULT and only modeld
 # on the device loads one
-if arch == 'comma_arm64' and jetlink_installed():
+if arch == 'comma_arm64' and (jetlink_installed() or chestnut_warp_split()):
   from openpilot.common.hardware import HARDWARE
   from openpilot.common.transformations.camera import _ar_ox_fisheye, _os_fisheye
   from openpilot.common.transformations.model import MEDMODEL_INPUT_SIZE

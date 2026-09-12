@@ -37,9 +37,11 @@ if arch == 'comma_arm64':
   else:
     camera = _os_fisheye if HARDWARE.get_device_type() == "mici" else _ar_ox_fisheye
     camera_configs = [(camera.width, camera.height)]
+  device_type = HARDWARE.get_device_type()
   tg_backend = 'QCOM'
   tg_flags = f'DEV={tg_backend} IMAGE=1 FLOAT16=1 NOLOCALS=1 JIT_BATCH_SIZE=0 OPENPILOT_HACKS=1'
 else:
+  device_type = None
   camera_configs = [(c.width, c.height) for c in (_ar_ox_fisheye, _os_fisheye)]
   tg_backend = 'CPU'
   tg_flags = f'DEV=CPU' if arch == 'Darwin' else 'DEV=CPU:LLVM'
@@ -51,6 +53,9 @@ tg_devices = { # which device to put jit inputs to at runtime
 }
 
 CHESTNUT = chestnut_present()
+# tici/tizi only: the warp moves to QCOM and this target becomes the policy alone.
+# mici keeps upstream's fused full-frame graph, which its 3.24 MB frame already fits.
+CHESTNUT_WARP_SPLIT = CHESTNUT and device_type in ('tici', 'tizi')
 if CHESTNUT:
   chestnut_tg_flags = 'DEBUG=1 DEV=USB+AMD:LLVM FRAME_DEV=CPU FLOAT16=1 JIT_BATCH_SIZE=0 GMMU=0 TC_OPT=2 TC_OCCUPANCY_OPT=1'
   # the USB+AMD GPU takes an exclusive flock; serialize all targets that touch it
@@ -83,11 +88,22 @@ if not os.getenv('SKIP_TINYGRAD_COMPILE'):
     camera_res_args = ' '.join(f'{cw}x{ch}' for cw, ch in camera_configs)
     # CPU 7 is isolated with isolcpus on AGNOS, so explicitly pin the compiler to it.
     taskset = 'taskset -c 7 ' if arch == 'comma_arm64' else ''
-    cmd = (f'{cmd_flags} {mac_brew_string} {taskset}python3 {modeld_dir}/compile_modeld.py '
-          f'--model-size {model_w}x{model_h} '
-          f'--camera-resolutions {camera_res_args} '
-          f'--onnx {File(f"models/{file_prefix}driving_supercombo.onnx").abspath} '
-          f'--output {target_pkl_path} --frame-skip {frame_skip}')
+    onnx_path = File(f"models/{file_prefix}driving_supercombo.onnx").abspath
+    if chestnut and CHESTNUT_WARP_SPLIT:
+      # the warp is its own target in accelerators/SConscript and runs on QCOM; this is the
+      # policy alone, fed the warped crop. No --camera-resolutions: the crop is model-sized
+      # whatever the camera is, so one pickle serves every device that can load it
+      chestnut_dir = Dir("#openpilot/sunnypilot/accelerators/chestnut").abspath
+      cmd = (f'{cmd_flags} {mac_brew_string} {taskset}python3 {chestnut_dir}/compile_policy.py '
+            f'--model-size {model_w}x{model_h} '
+            f'--onnx {onnx_path} '
+            f'--output {target_pkl_path} --frame-skip {frame_skip}')
+    else:
+      cmd = (f'{cmd_flags} {mac_brew_string} {taskset}python3 {modeld_dir}/compile_modeld.py '
+            f'--model-size {model_w}x{model_h} '
+            f'--camera-resolutions {camera_res_args} '
+            f'--onnx {onnx_path} '
+            f'--output {target_pkl_path} --frame-skip {frame_skip}')
     onnx_sizes_sum = sum(os.path.getsize(f) for f in driving_onnx_deps)
     chunk_targets = get_chunk_targets(target_pkl_path, estimate_pickle_max_size(onnx_sizes_sum, len(camera_configs)))
     def do_compile(target, source, env, command=cmd, pkl=target_pkl_path, chunks=chunk_targets):

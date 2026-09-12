@@ -37,6 +37,7 @@ from openpilot.selfdrive.modeld.helpers import (chestnut_present, chestnut_compi
                                                 check_modeld_pkl, check_camera_jit)
 
 from openpilot.sunnypilot import accelerators
+from openpilot.sunnypilot.accelerators import chestnut as chestnut_accel
 from openpilot.sunnypilot.livedelay.helpers import get_lat_delay
 from openpilot.sunnypilot.modeld_v2.modeld_base import ModelStateBase
 from openpilot.sunnypilot.selfdrive.controls.lib.relc import RoadEdgeLaneChangeController
@@ -267,6 +268,8 @@ def main(demo=False):
   else:
     params.remove("ChestnutActive")
   # before going realtime: prepare() starts tinygrad's device thread, which would inherit FIFO 54 on core 7
+  # tici/tizi with a board: warp on QCOM, policy on the board. mici keeps the fused path
+  CHESTNUT_WARP = CHESTNUT and chestnut_accel.supported() and chestnut_accel.prepare()
   JETLINK = not CHESTNUT and accelerators.enabled() and accelerators.prepare()
 
   config_realtime_process(7, 54)
@@ -302,7 +305,8 @@ def main(demo=False):
     def load_big():
       nonlocal big_model
       try:
-        m = ModelState(vipc_client_main.width, vipc_client_main.height, True)
+        m = (chestnut_accel.make_model_state(vipc_client_main.width, vipc_client_main.height)
+             if CHESTNUT_WARP else ModelState(vipc_client_main.width, vipc_client_main.height, True))
         m.warmup()
         big_model = m
       except Exception:
