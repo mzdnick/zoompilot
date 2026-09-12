@@ -52,7 +52,11 @@ tg_devices = { # which device to put jit inputs to at runtime
 
 CHESTNUT = chestnut_present()
 if CHESTNUT:
-  chestnut_tg_flags = 'DEBUG=1 DEV=USB+AMD:LLVM FRAME_DEV=CPU FLOAT16=1 JIT_BATCH_SIZE=0 GMMU=0 TC_OPT=2 TC_OCCUPANCY_OPT=1'
+  # FRAME_DEV is where the downscale runs: the SoC GPU that already owns the VisionIPC buffer.
+  # FRAME_SCALE=2 keeps two 3X frames at 1.87 MB instead of 7.47 MB over a 5 Gbps link.
+  chestnut_frame_scale = 2 if arch == 'comma_arm64' else 1
+  chestnut_tg_flags = (f'DEBUG=1 DEV=USB+AMD:LLVM FRAME_DEV={tg_backend} FLOAT16=1 '
+                       'JIT_BATCH_SIZE=0 GMMU=0 TC_OPT=2 TC_OCCUPANCY_OPT=1')
   # the USB+AMD GPU takes an exclusive flock; serialize all targets that touch it
   chestnut_lock = File("models/.chestnut.lock").abspath
 
@@ -79,6 +83,7 @@ if not os.getenv('SKIP_TINYGRAD_COMPILE'):
   for chestnut in [False, True] if CHESTNUT else [False]:
     target_pkl_path = File(modeld_pkl_path(chestnut)).abspath
     file_prefix, cmd_flags = ('big_', chestnut_tg_flags) if chestnut else ('', tg_flags)
+    frame_scale = chestnut_frame_scale if chestnut else 1
     driving_onnx_deps = get_existing_chunks(File(f"models/{file_prefix}driving_supercombo.onnx").abspath)
     camera_res_args = ' '.join(f'{cw}x{ch}' for cw, ch in camera_configs)
     # CPU 7 is isolated with isolcpus on AGNOS, so explicitly pin the compiler to it.
@@ -87,7 +92,7 @@ if not os.getenv('SKIP_TINYGRAD_COMPILE'):
           f'--model-size {model_w}x{model_h} '
           f'--camera-resolutions {camera_res_args} '
           f'--onnx {File(f"models/{file_prefix}driving_supercombo.onnx").abspath} '
-          f'--output {target_pkl_path} --frame-skip {frame_skip}')
+          f'--output {target_pkl_path} --frame-skip {frame_skip} --frame-scale {frame_scale}')
     onnx_sizes_sum = sum(os.path.getsize(f) for f in driving_onnx_deps)
     chunk_targets = get_chunk_targets(target_pkl_path, estimate_pickle_max_size(onnx_sizes_sum, len(camera_configs)))
     def do_compile(target, source, env, command=cmd, pkl=target_pkl_path, chunks=chunk_targets):

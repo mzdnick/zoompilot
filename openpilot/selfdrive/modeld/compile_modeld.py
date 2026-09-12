@@ -45,6 +45,41 @@ def nv12_copy_size(stride: int, y_height: int, uv_height: int) -> int:
   return stride * (y_height + uv_height)
 
 
+def nv12_scaled(nv12: NV12Frame, scale: int) -> NV12Frame:
+  """Geometry of an NV12 frame after an integer box downscale."""
+  from openpilot.system.camerad.cameras.nv12_info import get_nv12_info
+  w, h = nv12.width // scale, nv12.height // scale
+  return NV12Frame(w, h, *get_nv12_info(w, h))
+
+
+def make_downscale(nv12: NV12Frame, scale: int):
+  """
+  Box-filter an NV12 frame down by `scale` on the frame device, producing a frame in
+  the NV12 layout camerad would have emitted at the smaller size. Run on QCOM so only
+  the small frame crosses USB to the chestnut; the model still gets a whole frame.
+  """
+  cam_w, cam_h, stride, y_height, _, _ = nv12
+  out = nv12_scaled(nv12, scale)
+  uv_offset = stride * y_height
+  s = scale
+
+  def box(x):
+    h, w = x.shape
+    return (x.reshape(h // s, s, w // s, s).cast('uint32').sum(axis=(1, 3)) // (s * s)).cast('uint8')
+
+  def downscale(frame):
+    y = frame[:cam_h * stride].reshape(cam_h, stride)[:, :cam_w]
+    uv = frame[uv_offset:uv_offset + (cam_h // 2) * stride].reshape(cam_h // 2, stride)
+    # deinterleave, box each chroma plane, reinterleave
+    uv_out = Tensor.stack(box(uv[:, 0:cam_w:2]), box(uv[:, 1:cam_w:2]), dim=-1).flatten(-2)
+    y_out = box(y)
+    y_out = y_out.pad(((0, out.y_height - y_out.shape[0]), (0, out.stride - y_out.shape[1])))
+    uv_out = uv_out.pad(((0, out.uv_height - uv_out.shape[0]), (0, out.stride - uv_out.shape[1])))
+    return Tensor.cat(y_out, uv_out, dim=0).flatten().contiguous()
+
+  return downscale
+
+
 def warp_perspective_tinygrad(src_flat, M_inv, dst_shape, src_shape, stride_pad, border_fill_val=None):
   w_dst, h_dst = dst_shape
   h_src, w_src = src_shape
@@ -276,6 +311,17 @@ def compile_jit(jit, input_keys, make_queues, benchmark_runs):
   return jit
 
 
+def compile_downscale_jit(fn, nv12: NV12Frame, device, runs=3):
+  jit = TinyJit(fn)
+  src = Tensor(np.zeros(nv12.size, dtype=np.uint8), device=device).contiguous().realize()
+  for i in range(runs):
+    Device[device].synchronize()
+    st = time.perf_counter()
+    out = jit(src).numpy()
+    print(f"  [downscale {i+1}/{runs}] {(time.perf_counter()-st)*1e3:6.2f} ms -> {out.nbytes/1e6:.3f} MB")
+  return jit
+
+
 def _parse_size(s):
   w, h = s.lower().split('x')
   return int(w), int(h)
@@ -301,9 +347,14 @@ if __name__ == "__main__":
   p.add_argument('--onnx', required=True)
   p.add_argument('--output', required=True)
   p.add_argument('--frame-skip', type=int, required=True)
+  p.add_argument('--frame-scale', type=int, default=1,
+                 help='box downscale applied on FRAME_DEV before the frame is handed to the model device. '
+                      '1 disables it and the model device receives the camera frame as-is.')
   p.add_argument('--benchmark-runs', type=int, default=1,
                  help='timed loaded-JIT runs for each correctness seed')
   args = p.parse_args()
+  # device the downscale runs on, i.e. the SoC GPU that already owns the VisionIPC buffer
+  frame_device = os.getenv('FRAME_DEV', Device.DEFAULT) if args.frame_scale > 1 else None
 
   model_path = read_file_chunked_to_disk(args.onnx)
   model_w, model_h = args.model_size
@@ -311,8 +362,10 @@ if __name__ == "__main__":
   model_runner = OnnxRunner(model_path)
   out = {
     'metadata': make_metadata_dict(model_path),
-    'input_devices': {'model': Device.DEFAULT},
+    'input_devices': {'model': Device.DEFAULT, 'frame': frame_device},
+    'frame_scale': args.frame_scale,
     'run_model': {},
+    'downscale': {},
   }
   assert set(out) == set(MODELD_PKL_KEYS), "modeld reads MODELD_PKL_KEYS, keep it in step"
 
@@ -320,6 +373,13 @@ if __name__ == "__main__":
 
   for cam_w, cam_h in args.camera_resolutions:
     nv12 = NV12Frame(cam_w, cam_h, *get_nv12_info(cam_w, cam_h))
+    if args.frame_scale > 1:
+      print(f"building {args.frame_scale}x downscale for {cam_w}x{cam_h} on {frame_device}")
+      out['downscale'][(cam_w, cam_h)] = compile_downscale_jit(
+        make_downscale(nv12, args.frame_scale), nv12, frame_device)
+      # everything downstream sees the frame camerad would have produced at the smaller size
+      nv12 = nv12_scaled(nv12, args.frame_scale)
+      cam_w, cam_h = nv12.width, nv12.height
     frame_copy_size = nv12_copy_size(nv12.stride, nv12.y_height, nv12.uv_height)
     make_model_queues = partial(make_input_queues, out['metadata']['input_shapes'], args.frame_skip,
                                 frame_copy_size=frame_copy_size)

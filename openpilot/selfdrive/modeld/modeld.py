@@ -5,6 +5,7 @@ from functools import cached_property
 import os
 os.environ['GMMU'] = '0' # for chestnut fast loading, noop for qcom
 from tinygrad.device import Device
+from tinygrad.tensor import Tensor
 import usb1
 import struct
 import threading
@@ -28,7 +29,8 @@ from openpilot.common.transformations.model import get_warp_matrix
 from openpilot.selfdrive.controls.lib.desire_helper import DesireHelper
 from openpilot.selfdrive.controls.lib.drive_helpers import get_accel_from_plan, should_stop, smooth_value, get_curvature_from_plan
 from openpilot.selfdrive.modeld.parse_model_outputs import Parser
-from openpilot.selfdrive.modeld.compile_modeld import make_input_queues, nv12_copy_size, MODELD_INPUTS
+from openpilot.selfdrive.modeld.compile_modeld import (make_input_queues, nv12_copy_size, nv12_scaled,
+                                                       NV12Frame, MODELD_INPUTS)
 from openpilot.selfdrive.modeld.fill_model_msg import fill_model_msg, fill_driving_model_data, fill_pose_msg, PublishState
 from openpilot.common.file_chunker import open_file_chunked
 from openpilot.common.hardware.usb import CHESTNUT_USB_IDS
@@ -195,12 +197,33 @@ class ModelState(ModelStateBase):
     self.chestnut = chestnut
 
     self.frame_skip = ModelConstants.MODEL_RUN_FREQ // ModelConstants.MODEL_CONTEXT_FREQ
-    self.frame_copy_size = nv12_copy_size(*get_nv12_info(cam_w, cam_h)[:3])
+
+    # On chestnut the frame is boxed down on the SoC GPU first, so the model device gets a whole
+    # frame at a resolution its link can carry. frame_scale == 1 is the unscaled path.
+    self.frame_scale = jits['frame_scale']
+    self.src_nv12 = NV12Frame(cam_w, cam_h, *get_nv12_info(cam_w, cam_h))
+    self.frame_device = input_devices.get('frame')
+    self._blob_cache: dict[int, Tensor] = {}
+    self.downscale = None
+    model_nv12 = self.src_nv12
+    if self.frame_scale > 1:
+      check_camera_jit(jits['downscale'], cam_w, cam_h, pkl_path)
+      self.downscale = jits['downscale'][(cam_w, cam_h)]
+      model_nv12 = nv12_scaled(self.src_nv12, self.frame_scale)
+
+    self.frame_copy_size = nv12_copy_size(model_nv12.stride, model_nv12.y_height, model_nv12.uv_height)
     self.input_queues, self.npy, self.frame_views = make_input_queues(
       self.input_shapes, self.frame_skip, device=self.model_device, frame_copy_size=self.frame_copy_size)
     self.parser = Parser()
-    check_camera_jit(jits['run_model'], cam_w, cam_h, pkl_path)
-    self.run_model = jits['run_model'][(cam_w,cam_h)]
+    check_camera_jit(jits['run_model'], model_nv12.width, model_nv12.height, pkl_path)
+    self.run_model = jits['run_model'][(model_nv12.width, model_nv12.height)]
+
+  def _frame_tensor(self, buf) -> Tensor:
+    # there is a ringbuffer of imgs, just cache tensors pointing to all of them
+    ptr = np.frombuffer(buf.data, dtype=np.uint8).ctypes.data
+    if ptr not in self._blob_cache:
+      self._blob_cache[ptr] = Tensor.from_blob(ptr, (self.src_nv12.size,), dtype='uint8', device=self.frame_device)
+    return self._blob_cache[ptr]
 
   def slice_outputs(self, model_outputs: np.ndarray, output_slices: dict[str, slice]) -> dict[str, np.ndarray]:
     parsed_model_outputs = {k: model_outputs[np.newaxis, v] for k,v in output_slices.items()}
@@ -209,7 +232,10 @@ class ModelState(ModelStateBase):
   def run(self, bufs: dict[str, VisionBuf], transforms: dict[str, np.ndarray],
           inputs: dict[str, np.ndarray], after_enqueue: Callable[[], None] | None = None) -> dict[str, np.ndarray]:
     for key, buf in bufs.items():
-      np.copyto(self.frame_views[key], np.frombuffer(buf.data, dtype=np.uint8, count=self.frame_copy_size))
+      if self.downscale is not None:
+        np.copyto(self.frame_views[key], self.downscale(self._frame_tensor(buf)).numpy())
+      else:
+        np.copyto(self.frame_views[key], np.frombuffer(buf.data, dtype=np.uint8, count=self.frame_copy_size))
 
     # Model decides when action is completed, so desire input is just a pulse triggered on rising edge
     inputs['desire_pulse'][0] = 0
@@ -234,10 +260,12 @@ class ModelState(ModelStateBase):
     return outputs_dict
 
   def warmup(self) -> None:
-    dummy_frames = {k: np.zeros(self.frame_copy_size, dtype=np.uint8) for k in self.vision_input_names}
+    dummy_size = self.src_nv12.size if self.downscale is not None else self.frame_copy_size
+    dummy_frames = {k: np.zeros(dummy_size, dtype=np.uint8) for k in self.vision_input_names}
     eye = np.eye(3, dtype=np.float32)
     dims = {'desire_pulse': ModelConstants.DESIRE_LEN, 'traffic_convention': 2, 'action_t': 2}
     self.run(dummy_frames, dict.fromkeys(self.vision_input_names, eye), {k: np.zeros(v, dtype=np.float32) for k, v in dims.items()})
+    self._blob_cache.clear()  # the dummies are about to be freed, don't keep tensors into them
     self.input_queues, self.npy, self.frame_views = make_input_queues(
       self.input_shapes, self.frame_skip, device=self.model_device, frame_copy_size=self.frame_copy_size)
     self.prev_desire[:] = 0
@@ -426,6 +454,11 @@ def main(demo=False):
 
     bufs = {name: buf_extra if 'big' in name else buf_main for name in model.vision_input_names}
     transforms = {name: model_transform_extra if 'big' in name else model_transform_main for name in model.vision_input_names}
+    if model.frame_scale > 1:
+      # the warp samples a frame that was boxed down by frame_scale, so source pixel coords scale with it.
+      # computed per-iteration off the live model so the small-model fallback picks up scale 1 immediately.
+      px_from_cam = np.diag([1. / model.frame_scale, 1. / model.frame_scale, 1.]).astype(np.float32)
+      transforms = {k: (px_from_cam @ v).astype(np.float32) for k, v in transforms.items()}
     frame_delay = DT_MDL # compensate for time passed since the frame was captured: current_time - timestamp_eof is 50ms on average
     action_delay = DT_MDL / 2 # middle of the interval between model output (current state) and next frame (expected state)
     lat_action_t = lat_delay + frame_delay + action_delay
