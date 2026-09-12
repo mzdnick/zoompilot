@@ -582,8 +582,10 @@ struct CarStateZP @0xc879af11c43cb400 {
   # Engine cylinder mode, filled by the Mazda port from MORE_GAS (0x167) byte 7.
   # entry is the PCM's confirmation ramp before deactivation latches (about 1.2 s);
   # entryProgress tracks that ramp 0..1 so a UI can show deactivation incoming.
-  # engineBraking is inferred from pedal and decel: the PCM byte reports "all
-  # cylinders" during fuel cut, so that state cannot come from the byte itself.
+  # engineBraking is inferred from pedal-up and engine coupling only; there is no
+  # decel gate, because fuel cut survives grades where the car holds speed. The
+  # PCM byte reports "all cylinders" during fuel cut, so that state cannot come
+  # from the byte itself.
   # Stays normal on engines without deactivation hardware.
   cylinderDeactivation @2 :CylinderDeactivation;
 
@@ -595,7 +597,7 @@ struct CarStateZP @0xc879af11c43cb400 {
       normal @0;                    # all cylinders firing (idle, drive, fuel cut per the byte)
       entry @1;                     # deactivation pending, PCM confirmation ramp
       deactivated @2;               # two cylinders firing
-      engineBraking @3;             # inferred fuel cut, no cylinders firing
+      engineBraking @3;             # inferred coast in gear, pedal up and coupled; fuel cut likely, not confirmed
     }
   }
 }

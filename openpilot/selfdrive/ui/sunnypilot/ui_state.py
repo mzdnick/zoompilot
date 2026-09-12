@@ -48,6 +48,7 @@ class UIStateSP:
     self.blindspot: bool = False
     self.chevron_metrics = None
     self.custom_interactive_timeout: int = 0
+    self.cylinder_deactivation_ui: bool = False
     self.developer_ui = None
     self.hide_v_ego_ui: bool = False
     self.onroad_brightness: int = 0

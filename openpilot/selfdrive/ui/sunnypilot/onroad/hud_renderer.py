@@ -131,6 +131,8 @@ class HudRendererSP(HudRenderer):
     self.speed_renderer.render(rect)
 
   def _render(self, rect: rl.Rectangle) -> None:
+    # the ring draws first so later HUD elements stay on top of it, matching mici
+    self.cylinder_deactivation.render(rect, ui_state.sm)
     super()._render(rect)
 
     if ui_state.torque_bar:
@@ -146,4 +148,3 @@ class HudRendererSP(HudRenderer):
     self.turn_signal_controller.render(rect)
     self.circular_alerts_renderer.render(rect)
     self.rocket_fuel.render(rect, ui_state.sm)
-    self.cylinder_deactivation.render(rect, ui_state.sm)

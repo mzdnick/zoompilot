@@ -60,6 +60,8 @@ class CylinderDeactivationRenderer:
     self._prev_state = STATE.normal
     self._state_changed_t = 0.0
     self._vignette_a = 0
+    self._progress = 0.0         # the ramp the current state last drew with
+    self._prev_progress = 0.0    # latched at a transition, for the outgoing state's fade
 
   def render(self, rect: rl.Rectangle, sm) -> None:
     if not ui_state.cylinder_deactivation_ui:
@@ -71,10 +73,14 @@ class CylinderDeactivationRenderer:
 
     if state != self._last_state:
       self._prev_state = self._last_state
+      # the decode resets entryProgress the same frame it leaves entry, so latch the
+      # ramp the outgoing state was drawn with or its fade-out draws nothing
+      self._prev_progress = self._progress
       self._last_state = state
       self._state_changed_t = now
     fade = max(0.0, min(1.0, (now - self._state_changed_t) / STATE_FADE_S))
     progress = max(0.0, min(1.0, float(cd.entryProgress)))
+    self._progress = progress
 
     center = rl.Vector2(int(rect.x + self._corner_x), int(rect.y + rect.height - self._corner_y))
 
@@ -84,7 +90,7 @@ class CylinderDeactivationRenderer:
         return
       a = int(255 * (1.0 - fade))
       self._draw_vignette(center, a)
-      self._draw_state(self._prev_state, center, a, progress, now)
+      self._draw_state(self._prev_state, center, a, self._prev_progress, now)
       return
 
     if state == STATE.entry:
@@ -98,7 +104,7 @@ class CylinderDeactivationRenderer:
 
     self._draw_vignette(center, self._vignette_a)
     if self._prev_state not in (STATE.normal, state) and fade < 1.0:
-      self._draw_state(self._prev_state, center, int(255 * (1.0 - fade)), progress, now)
+      self._draw_state(self._prev_state, center, int(255 * (1.0 - fade)), self._prev_progress, now)
     self._draw_state(state, center, int(255 * fade), progress, now)
 
   def _draw_vignette(self, center: rl.Vector2, alpha: int) -> None:
