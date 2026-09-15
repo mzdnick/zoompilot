@@ -368,6 +368,7 @@ struct OnroadEventSP @0xda96579883444c35 {
     stockEcuNotReady @29;
     stockEcuInitializing @30;
     stockEcuReady @31;
+    stockLkasOff @32;
   }
 }
 
