@@ -9,6 +9,7 @@ from openpilot.cereal import custom, log, messaging
 from opendbc.car import structs
 from opendbc.car.mazda.values import MazdaFlags
 from openpilot.selfdrive.selfdrived.events import Events
+from opendbc.sunnypilot.car.mazda.values import MazdaFlagsSP
 from openpilot.sunnypilot.selfdrive.car.car_specific import CarSpecificEventsSP
 from openpilot.sunnypilot.selfdrive.selfdrived.events_base import ET
 
@@ -16,11 +17,13 @@ EventName = log.OnroadEvent.EventName
 EventNameSP = custom.OnroadEventSP.EventName
 
 
-def _car_events(brand: str, flags: int = 0) -> CarSpecificEventsSP:
+def _car_events(brand: str, flags: int = 0, sp_flags: int = MazdaFlagsSP.LKA_BUTTON) -> CarSpecificEventsSP:
   CP = structs.CarParams()
   CP.brand = brand
   CP.flags = int(flags)
-  return CarSpecificEventsSP(CP, structs.CarParamsSP())
+  CP_SP = structs.CarParamsSP()
+  CP_SP.flags = int(sp_flags)
+  return CarSpecificEventsSP(CP, CP_SP)
 
 
 def _car_state_sp():
@@ -119,3 +122,56 @@ class TestMazdaStockCtsEvents:
     events_sp = car_events.update(self._cs(True), events, _car_state_sp())
     assert events.has(EventName.stockLkas)
     assert not events_sp.has(EventNameSP.mazdaStockCtsActive)
+
+
+class TestMazdaStockLkasOff:
+  """Mazda swaps invalidLkasSetting for the SP stockLkasOff when MADS is on: the selfdrive
+  machine still engages, the MADS machine alone refuses lateral. Otherwise nothing is swapped."""
+
+  @staticmethod
+  def _cs(invalid: bool) -> structs.CarState:
+    CS = structs.CarState()
+    CS.invalidLkasSetting = invalid
+    return CS
+
+  def test_mads_on_swaps_the_no_entry_for_the_sp_event(self):
+    car_events = _car_events('mazda', MazdaFlags.GEN1 | MazdaFlags.STEER_TO_ZERO_EPS)
+    events = _events(EventName.invalidLkasSetting)
+    events_sp = car_events.update(self._cs(True), events, _car_state_sp(), True)
+    assert not events.has(EventName.invalidLkasSetting)
+    assert not events.contains(ET.NO_ENTRY), "the selfdrive machine must still engage"
+    assert not events.contains(ET.PERMANENT), "the banner belongs to the MADS-off path"
+    assert events_sp.has(EventNameSP.stockLkasOff)
+    assert events_sp.contains(ET.NO_ENTRY)
+    assert events_sp.contains(ET.USER_DISABLE), "an enabled lateral has to drop"
+
+  def test_mads_off_keeps_the_whole_system_no_entry(self):
+    car_events = _car_events('mazda', MazdaFlags.GEN1)
+    events = _events(EventName.invalidLkasSetting)
+    events_sp = car_events.update(self._cs(True), events, _car_state_sp(), False)
+    assert events.has(EventName.invalidLkasSetting)
+    assert events.contains(ET.NO_ENTRY)
+    assert events.contains(ET.PERMANENT), "the driver needs the banner to explain the refusal"
+    assert not events_sp.has(EventNameSP.stockLkasOff)
+
+  def test_lka_on_swaps_nothing(self):
+    car_events = _car_events('mazda', MazdaFlags.GEN1)
+    events = _events()
+    events_sp = car_events.update(self._cs(False), events, _car_state_sp(), True)
+    assert events.names == []
+    assert not events_sp.has(EventNameSP.stockLkasOff)
+
+  def test_an_undeclared_platform_keeps_the_whole_system_no_entry(self):
+    # no dash toggle on that platform, so a whole-system refusal is the honest one
+    car_events = _car_events('mazda', MazdaFlags.GEN1, sp_flags=0)
+    events = _events(EventName.invalidLkasSetting)
+    events_sp = car_events.update(self._cs(True), events, _car_state_sp(), True)
+    assert events.has(EventName.invalidLkasSetting)
+    assert not events_sp.has(EventNameSP.stockLkasOff)
+
+  def test_other_brands_are_untouched(self):
+    car_events = _car_events('nissan')
+    events = _events(EventName.invalidLkasSetting)
+    events_sp = car_events.update(self._cs(True), events, _car_state_sp(), True)
+    assert events.has(EventName.invalidLkasSetting)
+    assert not events_sp.has(EventNameSP.stockLkasOff)

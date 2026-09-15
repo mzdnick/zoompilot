@@ -10,6 +10,7 @@ from opendbc.car import structs
 
 from opendbc.car.chrysler.values import RAM_DT
 from opendbc.car.mazda.values import MazdaFlags
+from opendbc.sunnypilot.car.mazda.values import MazdaFlagsSP
 from openpilot.selfdrive.selfdrived.events import Events
 from openpilot.sunnypilot.mads.mads import SET_SPEED_BUTTONS
 from opendbc.sunnypilot.car.stock_ecu import ENGAGES_NORMALLY
@@ -30,7 +31,7 @@ class CarSpecificEventsSP:
     self.low_speed_alert = False
     self.stock_ecu_prev = StockEcuState.notNeeded
 
-  def update(self, CS: structs.CarState, events: Events, CS_SP):
+  def update(self, CS: structs.CarState, events: Events, CS_SP, mads_enabled_toggle: bool = False):
     events_sp = EventsSP()
 
     if self.CP.brand == 'chrysler':
@@ -69,6 +70,13 @@ class CarSpecificEventsSP:
         # steering (the panda blocks the camera's command).
         events.remove(EventName.stockLkas)
         events_sp.add(EventNameSP.mazdaStockCtsActive)
+      if mads_enabled_toggle and CS.invalidLkasSetting and self.CP_SP.flags & MazdaFlagsSP.LKA_BUTTON:
+        # With MADS on the dash LKA button is the lateral toggle, so LKA off is a driver
+        # choice: the selfdrive machine still engages on the stock cruise, the MADS machine
+        # alone refuses lateral. Otherwise nothing is swapped; the upstream no-entry and its
+        # banner are the only thing telling that driver why openpilot will not engage.
+        events.remove(EventName.invalidLkasSetting)
+        events_sp.add(EventNameSP.stockLkasOff)
 
     # A SET/RES press before the stock ECU openpilot stands in for is owned lands on a body
     # that will not engage (Mazda route 0000020d: six presses, nothing shown): name what the
