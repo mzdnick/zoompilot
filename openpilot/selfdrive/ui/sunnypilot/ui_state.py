@@ -19,6 +19,7 @@ OpenpilotState = log.SelfdriveState.OpenpilotState
 MADSState = custom.ModularAssistiveDrivingSystem.ModularAssistiveDrivingSystemState
 
 ONROAD_BRIGHTNESS_TIMER_PAUSED = -1
+LAT_ARMING_MIN_SPEED = 0.5  # m/s; below it the block bit is plain standstill, not a re-arm
 
 
 class OnroadTimerStatus(Enum):
@@ -109,7 +110,7 @@ class UIStateSP:
     return self.onroad_brightness in (OnroadBrightness.AUTO, OnroadBrightness.AUTO_DARK)
 
   @staticmethod
-  def update_status(ss, ss_sp, onroad_evt) -> str:
+  def update_status(ss, ss_sp, onroad_evt, car_state_sp, v_ego: float) -> str:
     state = ss.state
     mads = ss_sp.mads
     mads_state = mads.state
@@ -135,9 +136,16 @@ class UIStateSP:
       return "disengaged"
 
     if mads.enabled and ss.enabled:
+      # the same re-arm the lateral-only border holds, kept green here so longitudinal stays told
+      if car_state_sp.zoompilot.latBlocked and v_ego > LAT_ARMING_MIN_SPEED:
+        return "engaged_arming"
       return "engaged"
 
     if mads.enabled:
+      # the EPS takes a fixed ~3 s after a dash LKA re-enable before it holds lateral; the
+      # block bit also stands at standstill, where the border keeps its engaged look
+      if car_state_sp.zoompilot.latBlocked and v_ego > LAT_ARMING_MIN_SPEED:
+        return "lat_arming"
       return "lat_only"
 
     if ss.enabled:

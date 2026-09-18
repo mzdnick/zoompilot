@@ -10,7 +10,9 @@ from openpilot.selfdrive.ui.ui_state import UIStatus, ui_state
 from openpilot.system.ui.lib.application import gui_app
 
 BORDER_COLORS_SP = {
+  UIStatus.ENGAGED_ARMING: rl.Color(0x0D, 0x4C, 0x26, 0xFF),  # Dim green: both axes on, the EPS not holding lateral yet
   UIStatus.LAT_ONLY: rl.Color(0x00, 0xC8, 0xC8, 0xFF),  # Cyan for lateral-only state
+  UIStatus.LAT_ARMING: rl.Color(0x00, 0x7A, 0x87, 0xFF),  # Dim cyan: lateral on, the EPS not holding it yet
   UIStatus.LONG_ONLY: rl.Color(0x96, 0x1C, 0xA8, 0xFF),  # Purple for longitudinal-only state
 }
 
