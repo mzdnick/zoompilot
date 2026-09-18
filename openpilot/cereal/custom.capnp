@@ -368,6 +368,11 @@ struct OnroadEventSP @0xda96579883444c35 {
     stockEcuNotReady @29;
     stockEcuInitializing @30;
     stockEcuReady @31;
+    # 32 and 33 are stockEcuInitializing and stockEcuReady on the jetson-trt line;
+    # reserved here so the lines can converge without a renumber.
+    reserved32 @32;
+    reserved33 @33;
+    stockLkasOff @34;
   }
 }
 
@@ -544,6 +549,9 @@ struct CarStateZP @0xc879af11c43cb400 {
   # at carState rate: the driver's view of the ECU openpilot stands in for. ready is the
   # vehicle's own silence guard, never a session acknowledgement.
   stockEcu @1 :StockEcuState;
+  # EPS can't apply torque: standstill, dash LKA-off, or the re-arm after a re-enable.
+  # card copies it from carState for the UI's arming display.
+  latBlocked @2 :Bool;
 
   enum StockEcuState {
     notNeeded @0;
