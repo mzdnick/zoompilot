@@ -370,6 +370,7 @@ struct OnroadEventSP @0xda96579883444c35 {
     stockEcuNotReady @31;
     stockEcuInitializing @32;
     stockEcuReady @33;
+    stockLkasOff @34;
   }
 }
 
@@ -565,6 +566,10 @@ struct CarStateZP @0xc879af11c43cb400 {
   # at carState rate: the driver's view of the ECU openpilot stands in for. ready is the
   # vehicle's own silence guard, never a session acknowledgement.
   stockEcu @1 :StockEcuState;
+  # The EPS refuses lateral right now (standstill, dash LKA-off, the re-arm after a re-enable);
+  # card copies it from carState so the UI can hold lateral as arming. False where the brand
+  # reports no such state.
+  latBlocked @2 :Bool;
 
   enum StockEcuState {
     notNeeded @0;
