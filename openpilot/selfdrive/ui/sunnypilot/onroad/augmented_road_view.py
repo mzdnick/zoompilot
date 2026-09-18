@@ -11,6 +11,7 @@ from openpilot.system.ui.lib.application import gui_app
 
 BORDER_COLORS_SP = {
   UIStatus.LAT_ONLY: rl.Color(0x00, 0xC8, 0xC8, 0xFF),  # Cyan for lateral-only state
+  UIStatus.LAT_ARMING: rl.Color(0x00, 0x7A, 0x87, 0xFF),  # Dim cyan: lateral on, the EPS not holding it yet
   UIStatus.LONG_ONLY: rl.Color(0x96, 0x1C, 0xA8, 0xFF),  # Purple for longitudinal-only state
 }
 
