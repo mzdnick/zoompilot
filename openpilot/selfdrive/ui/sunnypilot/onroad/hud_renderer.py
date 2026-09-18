@@ -93,7 +93,7 @@ class HudRendererSP(HudRenderer):
         set_speed_color = SLA_ACTIVE_COLOR if long_override else rl.Color(0, 0xff, 0, 0xff)
         max_color = SLA_ACTIVE_COLOR if long_override else rl.Color(0x80, 0xd8, 0xa6, 0xff)
       else:
-        if ui_state.status == UIStatus.ENGAGED:
+        if ui_state.status in (UIStatus.ENGAGED, UIStatus.ENGAGED_ARMING):
           max_color = COLORS.ENGAGED
         elif ui_state.status == UIStatus.DISENGAGED:
           max_color = COLORS.DISENGAGED
