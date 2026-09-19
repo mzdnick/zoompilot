@@ -8,6 +8,8 @@ import threading
 import time
 import pyray as rl
 
+from openpilot.selfdrive.ui.sunnypilot.layouts.settings.captive_portal import CaptivePortalLoginUI
+from openpilot.system.ui.lib.application import gui_app
 from openpilot.system.ui.lib.multilang import tr
 from openpilot.system.ui.widgets.button import Button, ButtonStyle
 from openpilot.system.ui.widgets.network import NetworkUI, PanelType
@@ -20,8 +22,14 @@ class NetworkUISP(NetworkUI):
     self.scan_button = Button(tr("Scan"), self._scan_clicked, button_style=ButtonStyle.NORMAL, font_size=60, border_radius=30)
     self.scan_button.set_rect(rl.Rectangle(0, 0, 400, 100))
 
+    self.portal_button = Button(tr("Portal Login"), self._portal_clicked, button_style=ButtonStyle.NORMAL, font_size=60, border_radius=30)
+    self.portal_button.set_rect(rl.Rectangle(0, 0, 400, 100))
+
     self._scanning = False
     self._wifi_manager.add_callbacks(networks_updated=self._on_networks_updated)
+
+  def _portal_clicked(self):
+    gui_app.push_widget(CaptivePortalLoginUI(self._wifi_manager))
 
   def _scan_clicked(self):
     self._scanning = True
@@ -44,3 +52,13 @@ class NetworkUISP(NetworkUI):
     if self._current_panel == PanelType.WIFI:
       self.scan_button.set_position(self._rect.x, self._rect.y + 20)
       self.scan_button.render()
+
+      # the button appears only while captiveportald reports a hijack on the current link
+      try:
+        from openpilot.selfdrive.ui.ui_state import ui_state
+        portal_detected = ui_state.sm["customReserved10"].detected
+      except Exception:
+        portal_detected = False
+      if portal_detected:
+        self.portal_button.set_position(self._rect.x + 420, self._rect.y + 20)
+        self.portal_button.render()
