@@ -21,6 +21,8 @@ from openpilot.common.swaglog import cloudlog, add_file_handler
 from openpilot.common.version import get_build_metadata
 from openpilot.common.hardware.hw import Paths
 
+from openpilot.sunnypilot.selfdrive.car.interfaces import seed_car_defaults_offroad
+from openpilot.sunnypilot.selfdrive.car.stock_ecu_handback import StockEcuHandBackGate
 from openpilot.sunnypilot.system.params_migration import run_migration
 
 
@@ -39,7 +41,8 @@ def manager_init() -> None:
 
   # device boot mode
   if params.get("DeviceBootMode") == 1:  # start in Always Offroad mode
-    params.put_bool("OffroadMode", True, block=True)
+    # the preference; hardwared applies it on its first loop, before it can go onroad
+    params.put_bool("OffroadModeRequested", True, block=True)
 
   # quick boot
   if params.get_bool("QuickBootToggle") and not PC:
@@ -52,6 +55,7 @@ def manager_init() -> None:
 
   if not PC:
     run_migration(params)
+    seed_car_defaults_offroad(params)
 
   # set unset params to their default value
   for k in params.all_keys():
@@ -138,6 +142,8 @@ def manager_thread() -> None:
 
   started_prev = False
   ignition_prev = False
+  # a stop with no cancel: proceeds on any hand-back answer, or after the bound with none
+  stop_gate = StockEcuHandBackGate(params)
 
   while True:
     sm.update(1000)
@@ -188,7 +194,8 @@ def manager_thread() -> None:
         params.put("LastManagerExitReason", f"{param} {datetime.datetime.now()}", block=True)
         cloudlog.warning(f"Shutting down manager - {param} set")
 
-    if shutdown:
+    # a stop taken while onroad waits for the stock ECU hand-back, bounded
+    if shutdown and stop_gate.ready(started):
       break
 
 

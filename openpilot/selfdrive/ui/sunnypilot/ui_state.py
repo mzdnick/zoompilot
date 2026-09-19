@@ -12,7 +12,6 @@ from openpilot.common.params import Params
 from openpilot.selfdrive.ui.sunnypilot.layouts.settings.display import OnroadBrightness
 from openpilot.sunnypilot.models.helpers import ACTIVE_BUNDLE_KEYS, get_active_source
 from openpilot.sunnypilot.sunnylink.sunnylink_state import SunnylinkState
-from openpilot.sunnypilot.selfdrive.ui.offroad_mode import request_offroad_mode
 from openpilot.system.ui.lib.application import gui_app
 from openpilot.system.ui.sunnypilot.widgets.screen_saver import ScreenSaverSP
 
@@ -182,7 +181,7 @@ class UIStateSP:
     self.true_v_ego_ui = self.params.get_bool("TrueVEgoUI")
     self.turn_signals = self.params.get_bool("ShowTurnSignals")
     self.boot_offroad_mode = self.params.get("DeviceBootMode", return_default=True)
-    self.always_offroad = self.params.get_bool("OffroadMode")
+    self.always_offroad = self.params.get_bool("OffroadMode") or self.params.get_bool("OffroadModeRequested")  # applied or pending
     self.screensaver_enabled = self.params.get_bool("ScreenSaverEnabled")
 
     if not self._sp_initialized:
@@ -246,6 +245,13 @@ class UIStateSP:
       self.params.remove("SmartCruiseDecelOvershoot")
 
 
+def set_always_offroad(params: Params, enable: bool) -> None:
+  """The UI writes the forced-offroad preference only. hardwared applies it: entering waits for
+  a silenced stock ECU to be handed back before pandad sees OffroadMode, exiting clears the old
+  session's CarParams first so the fresh session sequences like a boot."""
+  params.put_bool("OffroadModeRequested", enable)
+
+
 class DeviceSP:
   def __init__(self):
     self._blocked_by_screensaver: bool = False
@@ -265,9 +271,10 @@ class DeviceSP:
     else:
       self.dismiss_screensaver(_ui_state)
 
-    # blocked runs every frame, so write only when actually sleeping
+    # blocked runs every frame, so write only when actually sleeping; ignition is off here,
+    # so hardwared applies the preference at once
     if _ui_state.boot_offroad_mode == 1 and not on and not self._blocked_by_screensaver:
-      request_offroad_mode(_ui_state.params, True)
+      _ui_state.params.put_bool("OffroadModeRequested", True)
 
   def dismiss_screensaver(self, _ui_state) -> None:
     if gui_app.get_active_widget() == _ui_state.screensaver:

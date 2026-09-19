@@ -12,14 +12,15 @@ from openpilot.selfdrive.ui.mici.widgets.dialog import BigConfirmationDialog, Bi
 from openpilot.selfdrive.ui.sunnypilot.mici.layouts.cruise import CruiseLayoutMici
 from openpilot.selfdrive.ui.sunnypilot.mici.layouts.display import DisplayLayoutMici
 from openpilot.selfdrive.ui.sunnypilot.mici.layouts.models import ModelsLayoutMici
+from openpilot.selfdrive.ui.sunnypilot.mici.layouts.software import SoftwareLayoutSP
 from openpilot.selfdrive.ui.sunnypilot.mici.layouts.steering import SteeringLayoutMici
 from openpilot.selfdrive.ui.sunnypilot.mici.layouts.sunnylink import SunnylinkLayoutMici
 from openpilot.selfdrive.ui.sunnypilot.mici.layouts.trips import TripsLayoutMici
 from openpilot.selfdrive.ui.sunnypilot.mici.layouts.visuals import VisualsLayoutMici
 from openpilot.selfdrive.ui.ui_state import ui_state
+from openpilot.selfdrive.ui.sunnypilot.ui_state import set_always_offroad
 from openpilot.system.ui.lib.application import gui_app, FontWeight
 from openpilot.system.ui.lib.multilang import tr
-from openpilot.sunnypilot.selfdrive.ui.offroad_mode import request_offroad_mode
 
 SP_ICON = "../../sunnypilot/selfdrive/assets/offroad"
 BIG_ICON_SIZE = 110
@@ -41,6 +42,9 @@ class SettingsLayoutSP(OP.SettingsLayout):
 
     device_panel = DeviceLayoutMici()
     self._scroller._items[2].set_click_callback(lambda: gui_app.push_widget(device_panel))
+
+    # by label: an index mis-wires silently if the base list is ever reordered
+    self._replace_panel("software", SoftwareLayoutSP())
 
     self.icon_offroad_enable = gui_app.texture("../../sunnypilot/selfdrive/assets/icons_mici/always_offroad.png", BIG_ICON_SIZE,
                                                BIG_ICON_SIZE)
@@ -99,6 +103,10 @@ class SettingsLayoutSP(OP.SettingsLayout):
     for item in items:
       self._scroller.add_widget(item)
 
+  def _replace_panel(self, label: str, panel) -> None:
+    btn = next(btn for btn in self._scroller.items if btn.get_text() == label)
+    btn.set_click_callback(lambda: gui_app.push_widget(panel))
+
   def _update_state(self):
     super()._update_state()
 
@@ -106,7 +114,7 @@ class SettingsLayoutSP(OP.SettingsLayout):
 
     def _set_offroad_status(status: bool):
       if not ui_state.engaged:
-        request_offroad_mode(ui_state.params, status)
+        set_always_offroad(ui_state.params, status)
         ui_state.always_offroad = status
 
     if not enable:
