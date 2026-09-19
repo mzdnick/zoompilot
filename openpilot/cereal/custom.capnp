@@ -492,7 +492,22 @@ struct ModelDataV2SP @0xa1680744031fdb2d {
   }
 }
 
+# zoompilot: the captivePortalSP message (captiveportald), on an unused sunnypilot
+# reserved slot so log.capnp's Event union stays untouched. The service is customReserved10.
 struct CustomReserved10 @0xcb9fd56c7057593a {
+  detected @0 :Bool;             # a portal hijack is currently seen on the wifi link
+  state @1 :State;
+  ssid @2 :Text;                 # current SSID, empty when off wifi
+  message @3 :Text;              # last failure reason or retry hint, empty when healthy
+  lastAttempt @4 :Float64;       # monotonic clock of the last auto-login attempt
+
+  enum State {
+    idle @0;                     # off wifi, or the link answers nothing
+    online @1;                   # probes pass
+    portal @2;                   # hijack detected; no profile, or waiting out the retry backoff
+    loggingIn @3;                # auto-login request in flight
+    loginFailed @4;              # last auto-login failed; message says why
+  }
 }
 
 struct CustomReserved11 @0xc2243c65e0340384 {

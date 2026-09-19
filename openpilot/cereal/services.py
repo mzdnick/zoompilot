@@ -106,6 +106,7 @@ _services: dict[str, tuple] = {
   "livestreamCabinEncodeData": (False, 20., None, QueueSize.MEDIUM),
   "customReservedRawData0": (True, 0.),
   "customReserved19": (True, 4., 1),  # liveTorqueParametersSP, published by torqued_ext
+  "customReserved10": (True, 1., 1),  # captivePortalSP, published by captiveportald
 }
 SERVICE_LIST = {name: Service(*vals) for
                 idx, (name, vals) in enumerate(_services.items())}

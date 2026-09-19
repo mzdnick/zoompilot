@@ -184,6 +184,9 @@ procs += [
 
   # locationd
   NativeProcess("locationd_llk", "openpilot/sunnypilot/selfdrive/locationd", ["./locationd"], only_onroad),
+
+  # Captive portal
+  PythonProcess("captiveportald", "openpilot.sunnypilot.captive_portal.manager", only_offroad),
 ]
 
 if os.path.exists("../../../release/ci/github_runner.sh"):
