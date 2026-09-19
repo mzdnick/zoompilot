@@ -310,4 +310,11 @@ inline static std::unordered_map<std::string, ParamKeyAttributes> keys = {
     {"MazdaTorqueDefaultsApplied", {PERSISTENT | BACKUP, BOOL}},
     // Tune version last seeded for the steer-to-zero Mazda EPS; a bump re-seeds everyone once.
     {"MazdaTorqueTuneSeeded", {PERSISTENT | BACKUP, FLOAT}},
+
+    // zoompilot: pangolin remote access client (sunnypilot/pangolin)
+    {"PangolinEnabled", {PERSISTENT, BOOL, "0"}},
+    {"PangolinEndpoint", {PERSISTENT, STRING}},
+    {"PangolinClientId", {PERSISTENT, STRING}},
+    {"PangolinClientSecret", {PERSISTENT, STRING}},
+    {"PangolinStatus", {CLEAR_ON_MANAGER_START, STRING}},
 };

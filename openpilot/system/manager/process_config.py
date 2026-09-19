@@ -12,6 +12,7 @@ from openpilot.common.hardware.hw import Paths
 from openpilot.sunnypilot.mapd.mapd_manager import MAPD_PATH
 
 from openpilot.sunnypilot.models.helpers import get_active_model_runner
+from openpilot.sunnypilot.pangolin.manager import pangolin_ready
 from openpilot.sunnypilot.sunnylink.utils import sunnylink_need_register, sunnylink_ready, use_sunnylink_uploader
 
 WEBCAM = os.getenv("USE_WEBCAM") is not None
@@ -78,6 +79,10 @@ def use_copyparty(started, params, CP: car.CarParams) -> bool:
 def sunnylink_ready_shim(started, params, CP: car.CarParams) -> bool:
   """Shim for sunnylink_ready to match the process manager signature."""
   return sunnylink_ready(params)
+
+def pangolin_ready_shim(started, params, CP: car.CarParams) -> bool:
+  """Shim for pangolin_ready to match the process manager signature."""
+  return pangolin_ready(params)
 
 def sunnylink_need_register_shim(started, params, CP: car.CarParams) -> bool:
   """Shim for sunnylink_need_register to match the process manager signature."""
@@ -184,6 +189,9 @@ procs += [
 
   # locationd
   NativeProcess("locationd_llk", "openpilot/sunnypilot/selfdrive/locationd", ["./locationd"], only_onroad),
+
+  # Remote access
+  PythonProcess("pangolin_clientd", "openpilot.sunnypilot.pangolin.manager", and_(always_run, pangolin_ready_shim)),
 ]
 
 if os.path.exists("../../../release/ci/github_runner.sh"):
