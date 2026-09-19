@@ -310,4 +310,7 @@ inline static std::unordered_map<std::string, ParamKeyAttributes> keys = {
     {"MazdaTorqueDefaultsApplied", {PERSISTENT | BACKUP, BOOL}},
     // Tune version last seeded for the steer-to-zero Mazda EPS; a bump re-seeds everyone once.
     {"MazdaTorqueTuneSeeded", {PERSISTENT | BACKUP, FLOAT}},
+
+    // zoompilot: saved captive portal logins, one entry per SSID (sunnypilot/captive_portal)
+    {"CaptivePortalProfiles", {PERSISTENT, JSON}},
 };
