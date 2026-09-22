@@ -291,6 +291,7 @@ struct LongitudinalPlanSP @0xf35cc4560bbf6ec2 {
       none @0;
       car @1;
       map @2;
+      camera @3; # car's camera-recognized limit, interposed by the fallback toggles
     }
 
     enum AssistState {
@@ -469,6 +470,7 @@ struct BackupManagerSP @0xf98d843bfd7004a3 {
 struct CarStateSP @0xb86e6369214c01c8 {
   speedLimit @0 :Float32;
   zoompilot @1 :CarStateZP;
+  speedLimitCamConfirmed @2 :Bool;
 }
 
 struct LiveMapDataSP @0xf416ec09499d9d19 {

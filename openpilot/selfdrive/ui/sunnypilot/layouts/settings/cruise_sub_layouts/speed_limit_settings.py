@@ -14,7 +14,7 @@ from openpilot.sunnypilot.selfdrive.controls.lib.speed_limit.common import Mode 
 from openpilot.sunnypilot.selfdrive.controls.lib.speed_limit.common import OffsetType as SpeedLimitOffsetType
 from openpilot.system.ui.lib.multilang import tr
 from openpilot.system.ui.sunnypilot.widgets import get_highlighted_description
-from openpilot.system.ui.sunnypilot.widgets.list_view import multiple_button_item_sp, option_item_sp, simple_button_item_sp, LineSeparatorSP
+from openpilot.system.ui.sunnypilot.widgets.list_view import multiple_button_item_sp, option_item_sp, simple_button_item_sp, toggle_item_sp, LineSeparatorSP
 from openpilot.system.ui.widgets import Widget
 from openpilot.system.ui.widgets.network import NavButton
 from openpilot.system.ui.widgets.scroller_tici import Scroller
@@ -86,13 +86,31 @@ class SpeedLimitSettingsLayout(Widget):
       label_callback=self._get_offset_label,
     )
 
+    self._camera_confirm_fallback_toggle = toggle_item_sp(
+      title=tr("Confirm Nav Fallback With Camera"),
+      description=tr("When the car's displayed limit comes from its nav map, use the OSM limit instead, " +
+                     "but only while it matches the last camera-confirmed limit. " +
+                     "Can override the car's displayed limit when camera and OSM agree on an outdated limit."),
+      param="SpeedLimitCameraConfirmFallback")
+
+    self._osm_fallback_priority_toggle = toggle_item_sp(
+      title=tr("Prefer OSM Over Nav Fallback"),
+      description=tr("When the car's displayed limit comes from its nav map, use the OSM limit instead. " +
+                     "The car's limit is still used when OSM has no data. " +
+                     "OSM data can be wrong; this overrides the car's displayed limit. " +
+                     "If both fallback toggles are on, this one applies."),
+      param="SpeedLimitOsmFallbackPriority")
+
     items = [
       self._speed_limit_mode,
       LineSeparatorSP(40),
       self._source_button,
       LineSeparatorSP(40),
       self._speed_limit_offset_type,
-      self._speed_limit_value_offset
+      self._speed_limit_value_offset,
+      LineSeparatorSP(40),
+      self._camera_confirm_fallback_toggle,
+      self._osm_fallback_priority_toggle,
     ]
     return items
 

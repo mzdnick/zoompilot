@@ -10,7 +10,7 @@ import time
 from openpilot.common.parameterized import parameterized
 
 from openpilot.cereal import custom
-from openpilot.sunnypilot.selfdrive.controls.lib.speed_limit import LIMIT_MAX_MAP_DATA_AGE
+from openpilot.sunnypilot.selfdrive.controls.lib.speed_limit import LIMIT_MAX_MAP_DATA_AGE, CAMERA_MEMORY_MAX_AGE
 
 from openpilot.sunnypilot.selfdrive.controls.lib.speed_limit.speed_limit_resolver import SpeedLimitResolver, ALL_SOURCES
 from openpilot.sunnypilot.selfdrive.controls.lib.speed_limit.common import Policy
@@ -145,3 +145,126 @@ class TestSpeedLimitResolverValidation(OpenpilotTestCase):
     resolver._get_from_map_data(sm_mock)
     assert resolver.limit_solutions[SpeedLimitSource.map] == 0.
     assert resolver.distance_solutions[SpeedLimitSource.map] == 0.
+
+
+def setup_fallback_sm(mocker, *, car_limit, cam_confirmed=False, osm_limit=0., osm_valid=False):
+  """A SubMaster mock showing one carStateSP frame and the OSM section state."""
+  car_state_sp = create_mock({
+    'speedLimit': car_limit,
+    'speedLimitCamConfirmed': cam_confirmed,
+  }, mocker)
+  live_map_data = create_mock({
+    'speedLimit': osm_limit,
+    'speedLimitValid': osm_valid,
+    'speedLimitAhead': 0.,
+    'speedLimitAheadValid': False,
+    'speedLimitAheadDistance': 0.,
+  }, mocker)
+  gps_data = create_mock({
+    'unixTimestampMillis': time.monotonic() * 1e3,
+  }, mocker)
+  sm_mock = mocker.MagicMock()
+  sm_mock.__getitem__.side_effect = lambda key: {
+    'liveMapDataSP': live_map_data,
+    'carStateSP': car_state_sp,
+    'gpsLocation': gps_data,
+  }[key]
+  return sm_mock
+
+
+MPH = 0.44704
+CAMERA_VALUE = 25. * MPH   # the latched camera confirmation
+OSM_MATCHING = CAMERA_VALUE
+OSM_MISMATCHED = 30. * MPH
+
+
+class TestSpeedLimitCameraFallback(OpenpilotTestCase):
+  """The fallback toggles act only while the car's nav-map fallback is displayed
+  (limit shown, camera bit clear). With OSM present the priority toggle always takes
+  it, the confirm toggle only when it matches the latched camera value; without OSM
+  the car's value stands as the last tier. Toggles off is byte-identical to stock."""
+
+  def _resolver(self, mocker, *, confirm=False, priority=False) -> SpeedLimitResolver:
+    resolver = SpeedLimitResolver()
+    resolver.camera_confirm_fallback = confirm
+    resolver.osm_fallback_priority = priority
+    resolver.policy = Policy.car_state_only
+    # a camera confirmation happened one frame ago
+    sm = setup_fallback_sm(mocker, car_limit=CAMERA_VALUE, cam_confirmed=True)
+    resolver._update_camera_memory(sm['carStateSP'])
+    return resolver
+
+  def test_toggles_off_is_stock(self, mocker):
+    resolver = self._resolver(mocker)
+    sm = setup_fallback_sm(mocker, car_limit=35. * MPH, osm_limit=OSM_MATCHING, osm_valid=True)
+    resolver.update(20., sm)
+    assert resolver.source == SpeedLimitSource.car
+    assert resolver.speed_limit == 35. * MPH
+
+  def test_confirm_swaps_matching_osm(self, mocker):
+    resolver = self._resolver(mocker, confirm=True)
+    sm = setup_fallback_sm(mocker, car_limit=35. * MPH, osm_limit=OSM_MATCHING, osm_valid=True)
+    resolver.update(20., sm)
+    assert resolver.source == SpeedLimitSource.camera
+    assert resolver.speed_limit == OSM_MATCHING
+
+  def test_confirm_ignores_mismatched_osm(self, mocker):
+    resolver = self._resolver(mocker, confirm=True)
+    sm = setup_fallback_sm(mocker, car_limit=35. * MPH, osm_limit=OSM_MISMATCHED, osm_valid=True)
+    resolver.update(20., sm)
+    assert resolver.source == SpeedLimitSource.car
+
+  def test_confirm_ignores_missing_osm(self, mocker):
+    resolver = self._resolver(mocker, confirm=True)
+    sm = setup_fallback_sm(mocker, car_limit=35. * MPH, osm_limit=0., osm_valid=False)
+    resolver.update(20., sm)
+    assert resolver.source == SpeedLimitSource.car
+
+  def test_confirm_ignores_expired_latch(self, mocker):
+    resolver = self._resolver(mocker, confirm=True)
+    resolver.camera_memory_age = CAMERA_MEMORY_MAX_AGE + 1.
+    sm = setup_fallback_sm(mocker, car_limit=35. * MPH, osm_limit=OSM_MATCHING, osm_valid=True)
+    resolver.update(20., sm)
+    assert resolver.source == SpeedLimitSource.car
+
+  def test_confirm_freshens_on_live_camera(self, mocker):
+    resolver = self._resolver(mocker, confirm=True)
+    sm_live = setup_fallback_sm(mocker, car_limit=30. * MPH, cam_confirmed=True)
+    resolver._update_camera_memory(sm_live['carStateSP'])
+    sm = setup_fallback_sm(mocker, car_limit=35. * MPH, osm_limit=30. * MPH, osm_valid=True)
+    resolver.update(20., sm)
+    assert resolver.source == SpeedLimitSource.camera
+    assert resolver.speed_limit == 30. * MPH
+
+  def test_priority_takes_mismatched_osm(self, mocker):
+    resolver = self._resolver(mocker, priority=True)
+    sm = setup_fallback_sm(mocker, car_limit=35. * MPH, osm_limit=OSM_MISMATCHED, osm_valid=True)
+    resolver.update(20., sm)
+    assert resolver.source == SpeedLimitSource.camera
+    assert resolver.speed_limit == OSM_MISMATCHED
+
+  def test_priority_keeps_sd_as_last_tier(self, mocker):
+    resolver = self._resolver(mocker, priority=True)
+    sm = setup_fallback_sm(mocker, car_limit=35. * MPH, osm_limit=0., osm_valid=False)
+    resolver.update(20., sm)
+    assert resolver.source == SpeedLimitSource.car
+
+  def test_priority_subsumes_confirm_when_both_on(self, mocker):
+    resolver = self._resolver(mocker, confirm=True, priority=True)
+    sm = setup_fallback_sm(mocker, car_limit=35. * MPH, osm_limit=OSM_MISMATCHED, osm_valid=True)
+    resolver.update(20., sm)
+    assert resolver.source == SpeedLimitSource.camera
+
+  def test_live_camera_display_never_interposes(self, mocker):
+    resolver = self._resolver(mocker, confirm=True, priority=True)
+    sm = setup_fallback_sm(mocker, car_limit=35. * MPH, cam_confirmed=True,
+                           osm_limit=OSM_MISMATCHED, osm_valid=True)
+    resolver.update(20., sm)
+    assert resolver.source == SpeedLimitSource.car
+
+  def test_combined_policy_takes_camera_slot(self, mocker):
+    resolver = self._resolver(mocker, priority=True)
+    resolver.policy = Policy.combined
+    sm = setup_fallback_sm(mocker, car_limit=35. * MPH, osm_limit=OSM_MISMATCHED, osm_valid=True)
+    resolver.update(20., sm)
+    assert resolver.source == SpeedLimitSource.camera

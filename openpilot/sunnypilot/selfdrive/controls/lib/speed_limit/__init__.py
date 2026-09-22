@@ -9,6 +9,10 @@ from openpilot.cereal import custom
 LIMIT_ADAPT_ACC = -1.  # m/s^2 Ideal acceleration for the adapting (braking) phase when approaching speed limits.
 LIMIT_MAX_MAP_DATA_AGE = 10.  # s Maximum time to hold to map data, then consider it invalid inside limits controllers.
 
+# Camera fallback constants (Mazda TSR SPEED_SIGN_CAM; see SpeedLimitResolver._get_from_camera_memory)
+CAMERA_MEMORY_MAX_AGE = 60.  # s bound on the latched camera confirmation used to corroborate a fallback
+CAMERA_OSM_MATCH_TOLERANCE = 0.5  # m/s, well under the smallest posted step (5 mph is about 2.2 m/s)
+
 # Speed Limit Assist constants
 PCM_LONG_REQUIRED_MAX_SET_SPEED = {
   True: (33.3333, 36.1111),  # km/h, (120, 130)

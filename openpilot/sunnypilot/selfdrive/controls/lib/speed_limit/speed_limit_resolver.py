@@ -13,7 +13,8 @@ from openpilot.common.gps import get_gps_location_service
 from openpilot.common.params import Params
 from openpilot.common.realtime import DT_MDL
 from openpilot.sunnypilot import PARAMS_UPDATE_PERIOD, get_sanitize_int_param
-from openpilot.sunnypilot.selfdrive.controls.lib.speed_limit import LIMIT_MAX_MAP_DATA_AGE, LIMIT_ADAPT_ACC
+from openpilot.sunnypilot.selfdrive.controls.lib.speed_limit import LIMIT_MAX_MAP_DATA_AGE, LIMIT_ADAPT_ACC, \
+  CAMERA_MEMORY_MAX_AGE, CAMERA_OSM_MATCH_TOLERANCE
 from openpilot.sunnypilot.selfdrive.controls.lib.smart_cruise_control.limits import COMMIT_FRAC, get_planning_limits
 from openpilot.sunnypilot.selfdrive.controls.lib.speed_limit.common import Policy, OffsetType
 
@@ -52,12 +53,16 @@ class SpeedLimitResolver:
       Policy.max().value,
       self.params
     )
+    # The camera slot sits just ahead of the car slot in every car-bearing policy, so a
+    # fallback limit the toggles interpose wins over the car's own nav value. The slot
+    # stays at zero unless one of the fallback toggles fires, which keeps every policy
+    # byte-identical to its stock behavior when they are off.
     self._policy_to_sources_map = {
-      Policy.car_state_only: [SpeedLimitSource.car],
+      Policy.car_state_only: [SpeedLimitSource.camera, SpeedLimitSource.car],
       Policy.map_data_only: [SpeedLimitSource.map],
-      Policy.car_state_priority: [SpeedLimitSource.car, SpeedLimitSource.map],
-      Policy.map_data_priority: [SpeedLimitSource.map, SpeedLimitSource.car],
-      Policy.combined: [SpeedLimitSource.car, SpeedLimitSource.map],
+      Policy.car_state_priority: [SpeedLimitSource.camera, SpeedLimitSource.car, SpeedLimitSource.map],
+      Policy.map_data_priority: [SpeedLimitSource.map, SpeedLimitSource.camera, SpeedLimitSource.car],
+      Policy.combined: [SpeedLimitSource.camera, SpeedLimitSource.car, SpeedLimitSource.map],
     }
     self.source = SpeedLimitSource.none
     for source in ALL_SOURCES:
@@ -77,6 +82,11 @@ class SpeedLimitResolver:
     self.speed_limit_final = 0.
     self.speed_limit_final_last = 0.
     self.speed_limit_offset = 0.
+
+    self.camera_confirm_fallback = self.params.get_bool("SpeedLimitCameraConfirmFallback")
+    self.osm_fallback_priority = self.params.get_bool("SpeedLimitOsmFallbackPriority")
+    self.camera_memory = 0.  # last camera-confirmed limit, m/s; a witness, never a solution
+    self.camera_memory_age = CAMERA_MEMORY_MAX_AGE  # s since the camera last confirmed; starts expired
 
   def update_speed_limit_states(self) -> None:
     self.speed_limit_final = self.speed_limit + self.speed_limit_offset
@@ -99,6 +109,8 @@ class SpeedLimitResolver:
       self.is_metric = self.params.get_bool("IsMetric")
       self.offset_type = self.params.get("SpeedLimitOffsetType", return_default=True)
       self.offset_value = self.params.get("SpeedLimitValueOffset", return_default=True)
+      self.camera_confirm_fallback = self.params.get_bool("SpeedLimitCameraConfirmFallback")
+      self.osm_fallback_priority = self.params.get_bool("SpeedLimitOsmFallbackPriority")
 
   def _get_speed_limit_offset(self) -> float:
     if self.offset_type == OffsetType.off:
@@ -171,10 +183,47 @@ class SpeedLimitResolver:
 
     return SpeedLimitSource.none
 
+  def _update_camera_memory(self, cs_sp) -> None:
+    """Track the last camera-confirmed limit from the carStateSP stream. The latch is a
+    freshness witness for the fallback toggles, never a solution itself."""
+    if cs_sp.speedLimitCamConfirmed and cs_sp.speedLimit > 0.:
+      self.camera_memory = cs_sp.speedLimit
+      self.camera_memory_age = 0.
+    else:
+      self.camera_memory_age += DT_MDL
+
+  def _get_from_camera_memory(self, sm: messaging.SubMaster) -> None:
+    """Interpose OSM over the car's nav-map fallback during a camera dropout.
+
+    Fires only while a limit is displayed from the car's nav map (camera bit clear):
+    with OSM present, the priority toggle always takes it, and the confirm toggle takes
+    it when it matches the latched camera value. Without OSM the car's value stands as
+    the last tier. Old logs and toggles-off leave this slot at zero, which is stock
+    behavior."""
+    self._reset_limit_sources(SpeedLimitSource.camera)
+    if not (self.camera_confirm_fallback or self.osm_fallback_priority):
+      return
+
+    cs_sp = sm['carStateSP']
+    if cs_sp.speedLimit <= 0. or cs_sp.speedLimitCamConfirmed:
+      return  # live camera display or nothing displayed: the car slot already carries the value
+
+    map_data = sm['liveMapDataSP']
+    if not (map_data.speedLimitValid and map_data.speedLimit > 0.):
+      return  # tier-3 SD: no OSM in this section
+
+    if self.osm_fallback_priority or (
+        self.camera_memory_age <= CAMERA_MEMORY_MAX_AGE and self.camera_memory > 0. and
+        abs(map_data.speedLimit - self.camera_memory) <= CAMERA_OSM_MATCH_TOLERANCE):
+      self.limit_solutions[SpeedLimitSource.camera] = map_data.speedLimit
+      self.distance_solutions[SpeedLimitSource.camera] = 0.
+
   def _resolve_limit_sources(self, sm: messaging.SubMaster) -> tuple[float, float, custom.LongitudinalPlanSP.SpeedLimit.Source]:
     """Get limit solutions from each data source"""
     self._get_from_car_state(sm)
     self._get_from_map_data(sm)
+    self._update_camera_memory(sm['carStateSP'])
+    self._get_from_camera_memory(sm)
 
     source = self._get_source_solution_according_to_policy()
     speed_limit = self.limit_solutions[source] if source else 0.
