@@ -43,6 +43,7 @@ class ModularAssistiveDrivingSystem:
     self.lateral_mismatch_counter = 0
     self.allow_always = False
     self.no_main_cruise = False
+    self.main_seen_off = False
     self.selfdrive = selfdrive
     self.selfdrive.enabled_prev = False
     self.state_machine = StateMachine(self)
@@ -182,7 +183,12 @@ class ModularAssistiveDrivingSystem:
         self.events.remove(EventName.buttonEnable)
     else:
       if self.main_enabled_toggle and not self.no_main_cruise:
-        if CS.cruiseState.available and not self.selfdrive.CS_prev.cruiseState.available:
+        main_edge = CS.cruiseState.available and not self.selfdrive.CS_prev.cruiseState.available
+        if self.CP.brand == "mazda":
+          # CRZ_AVAILABLE can already be armed when openpilot starts; the edge must come after main was seen off
+          self.main_seen_off |= (CS.canValid and not CS.cruiseState.available)
+          main_edge = main_edge and self.main_seen_off
+        if main_edge:
           self.events_sp.add(EventNameSP.lkasEnable)
 
     for be in CS.buttonEvents:
