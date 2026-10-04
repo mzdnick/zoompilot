@@ -1038,7 +1038,7 @@ class TestAlphaLongSwitchMici:
 
 
 class TestAlphaLongitudinalPanelMici:
-  """The alpha switch, experimental mode, DEC and speed assist live under Cruise, once."""
+  """The alpha switch, experimental mode, speed assist and DEC live under Cruise, once."""
 
   def test_moved_switches_appear_once(self, params):
     from openpilot.selfdrive.ui.sunnypilot.mici.layouts.alpha_longitudinal import AlphaLongitudinalLayoutMici
@@ -1053,7 +1053,7 @@ class TestAlphaLongitudinalPanelMici:
 
     alpha = AlphaLongitudinalLayoutMici()
     assert [key for key, _ in alpha._refresh_toggles] == [
-      "AlphaLongitudinalEnabled", "ExperimentalMode", "DynamicExperimentalControl", "ExperimentalModeSetSpeed"]
+      "AlphaLongitudinalEnabled", "ExperimentalMode", "ExperimentalModeSetSpeed", "DynamicExperimentalControl"]
 
   def test_settings_opens_the_sp_panels(self, params, monkeypatch):
     from openpilot.selfdrive.ui.sunnypilot.mici.layouts.developer import DeveloperLayoutMiciSP
@@ -1069,7 +1069,7 @@ class TestAlphaLongitudinalPanelMici:
       assert type(pushed[-1]) is cls
 
   @pytest.mark.parametrize(("has_long", "badges"), [
-    (True, ["experimental", "assist"]),
+    (True, ["exp.", "speed assist"]),
     (False, None),  # alpha off: a grey "disabled" pill
   ])
   def test_cruise_entry_shows_the_mode(self, params, monkeypatch, has_long, badges):
