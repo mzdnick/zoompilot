@@ -18,6 +18,7 @@ zoompilot vUNRELEASED
 * Decel Overshoot replaced by a Mazda tune: less hard braking for highway curves.
 * Smoother curve slowdowns.
 * A speed limit prompt no longer stalls a curve slowdown.
+* Speed comes back sooner in and after long curves.
 
 **Fixes**
 * **Lane Keep Off:** dash button turns off steering, keeps cruise. Steering resumes when it's back on.
