@@ -11,7 +11,7 @@ from openpilot.selfdrive.ui.sunnypilot.ui_state import set_always_offroad
 from openpilot.common.hardware import HARDWARE
 from openpilot.system.ui.lib.application import gui_app
 from openpilot.system.ui.lib.multilang import tr
-from openpilot.system.ui.sunnypilot.widgets.list_view import option_item_sp, multiple_button_item_sp, button_item_sp, \
+from openpilot.system.ui.sunnypilot.widgets.list_view import option_item_sp, multiple_button_item_sp, button_item_sp, toggle_item_sp, \
   dual_button_item_sp, Spacer
 from openpilot.system.ui.widgets import DialogResult
 from openpilot.system.ui.widgets.button import ButtonStyle
@@ -95,6 +95,12 @@ class DeviceLayoutSP(DeviceLayout):
     )
     self._reg_and_training.action_item.right_button.set_button_style(ButtonStyle.NORMAL)
 
+    self._zoo_backend_toggle = toggle_item_sp(
+      title=lambda: tr("zoo backend"),
+      description=lambda: tr("Route uploads, pairing, and the live channel to a self-hosted zoo server.\nSet the server URL once with: params put ZooApiUrl http://<host>:<port>\nTakes effect after restart. When switching backends, re-register the device."),
+      param="ZooBackendEnabled"
+    )
+
     self._onroad_uploads_and_reset_settings = dual_button_item_sp(
       left_text=lambda: tr("Onroad Uploads"),
       left_callback=lambda: ui_state.params.put_bool("OnroadUploads", not ui_state.params.get_bool("OnroadUploads")),
@@ -127,6 +133,7 @@ class DeviceLayoutSP(DeviceLayout):
       self._quiet_mode_and_dcam,
       self._reg_and_training,
       self._onroad_uploads_and_reset_settings,
+      self._zoo_backend_toggle,
       Spacer(10),
       LineSeparator(height=10),
       self._power_buttons,
