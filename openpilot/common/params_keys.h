@@ -245,6 +245,7 @@ inline static std::unordered_map<std::string, ParamKeyAttributes> keys = {
     // zoo self-hosted backend params
     {"ZooApiUrl", {PERSISTENT, STRING}},
     {"ZooBackendEnabled", {PERSISTENT, BOOL}},
+    {"ZooBackendPrevEnabled", {PERSISTENT | BACKUP, STRING}},
 
     // Backup Manager params
     {"BackupManager_CreateBackup", {PERSISTENT, BOOL}},

@@ -26,7 +26,22 @@ export STAGING_ROOT="/data/safe_staging"
 # Target:   /data/params/d/ZooApiUrl (e.g. http://192.168.1.50:8000 or
 #           https://zoo.example.net). Applied on manager start.
 ZOO_PARAMS_DIR="${ZOO_PARAMS_DIR:-/data/params/d}"
+
+# When the backend selection CHANGES, drop the old backend's dongle
+# identity so the device re-registers against the new backend at boot.
+# The first run after installing this branch records the state without
+# touching the existing (comma) identity.
+ZOO_NOW="0"
 if [ -f "$ZOO_PARAMS_DIR/ZooBackendEnabled" ] && [ "$(cat "$ZOO_PARAMS_DIR/ZooBackendEnabled" 2>/dev/null)" = "1" ]; then
+  ZOO_NOW="1"
+fi
+ZOO_PREV="$(cat "$ZOO_PARAMS_DIR/ZooBackendPrevEnabled" 2>/dev/null || true)"
+if [ -n "$ZOO_PREV" ] && [ "$ZOO_PREV" != "$ZOO_NOW" ]; then
+  rm -f "$ZOO_PARAMS_DIR/DongleId"
+fi
+[ "$ZOO_PREV" != "$ZOO_NOW" ] && printf '%s' "$ZOO_NOW" > "$ZOO_PARAMS_DIR/ZooBackendPrevEnabled"
+
+if [ "$ZOO_NOW" = "1" ]; then
   ZOO_API_URL="$(cat "$ZOO_PARAMS_DIR/ZooApiUrl" 2>/dev/null)"
   ZOO_API_URL="${ZOO_API_URL%/}"
   case "$ZOO_API_URL" in

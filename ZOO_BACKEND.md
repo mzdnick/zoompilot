@@ -27,16 +27,15 @@ The toggle takes effect on the next manager start.
 
 ## Registering with the server
 
-A device registers against whatever backend it boots with. When you switch
-backends, clear the old registration first:
+Nothing to do by hand. The device registers against whatever backend it
+boots with, and when the toggle CHANGES, the old backend's dongle identity
+is cleared automatically at the next boot so the device re-registers with
+the new one (comma → zoo or zoo → comma). After a switch, open
+**Settings → Device → Pair Device** — the QR points at the zoo web UI when
+the toggle is on — and claim the device in the zoo web app.
 
-```
-rm /data/params/d/DongleId
-```
-
-Then open **Settings → Device → Pair Device** on screen — the QR code points
-at the zoo server's web UI when the toggle is on — and claim the device in
-the zoo web app.
+The only manual step left is setting the server URL once (SSH above, or any
+params editor of your choice).
 
 ## How it works
 
