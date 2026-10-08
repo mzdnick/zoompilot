@@ -1,8 +1,8 @@
 # zoo backend
 
 Point this device at a self-hosted [zoo](https://github.com/mzdnick/zoo) server
-instead of comma connect. Uploads, pairing, and the athena live channel all
-switch; nothing else changes.
+instead of comma connect. Uploads, pairing, the athena live channel, and the
+sunnylink connection all switch; nothing else changes.
 
 ## One-time setup
 
@@ -43,3 +43,24 @@ params editor of your choice).
 `ATHENA_HOST` (ws/wss derived from the URL scheme), and `ZOO_BACKEND_ACTIVE`
 for every openpilot process. The pairing dialogs read
 `openpilot/common/api/backend.py` to build the QR URL for the active backend.
+
+## Sunnylink on zoo
+
+With the toggle on, `launch_env.sh` also exports `SUNNYLINK_API_HOST` and
+`SUNNYLINK_ATHENA_HOST` (same server, `/ws/sp` route appended), so
+`sunnylinkd` connects to zoo alongside the comma athena socket. zoo serves
+the sunnylink surface itself:
+
+- **One identity.** zoo registers the same key for both worlds, so
+  `SunnylinkDongleId` equals `DongleId`. When the toggle CHANGES, both
+  identity params are cleared together.
+- **Remote settings** from the zoo web UI: `zoo → device <dongle> → settings`.
+  The schema is read from your device; blocked params cannot be written.
+- **Sponsor roles** stay fully open (zoo has no sponsor tiers).
+- **Backups** made from the device screen are stored on zoo (encrypted;
+  zoo cannot read them). The zoo settings page shows the latest one.
+- **Uploads skip** the sunnylink uploader (zoo answers 412) — route files
+  keep flowing through the normal comma upload path.
+
+Nothing to configure; the sunnylink toggle in device settings keeps working
+as the on/off switch for this connection.
