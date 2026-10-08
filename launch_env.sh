@@ -38,6 +38,9 @@ fi
 ZOO_PREV="$(cat "$ZOO_PARAMS_DIR/ZooBackendPrevEnabled" 2>/dev/null || true)"
 if [ -n "$ZOO_PREV" ] && [ "$ZOO_PREV" != "$ZOO_NOW" ]; then
   rm -f "$ZOO_PARAMS_DIR/DongleId"
+  # zoo runs sunnylink with the same single identity: drop it too, so both
+  # connections re-register against the new backend together.
+  rm -f "$ZOO_PARAMS_DIR/SunnylinkDongleId"
 fi
 [ "$ZOO_PREV" != "$ZOO_NOW" ] && printf '%s' "$ZOO_NOW" > "$ZOO_PARAMS_DIR/ZooBackendPrevEnabled"
 
@@ -50,6 +53,14 @@ if [ "$ZOO_NOW" = "1" ]; then
       case "$ZOO_API_URL" in
         https://*) export ATHENA_HOST="wss://${ZOO_API_URL#https://}" ;;
         http://*)  export ATHENA_HOST="ws://${ZOO_API_URL#http://}" ;;
+      esac
+      # sunnylinkd points at the same zoo server. SUNNYLINK_ATHENA_HOST is
+      # used verbatim as the ws URI (no path is appended device-side), so the
+      # zoo sunnylink route path is part of the value.
+      export SUNNYLINK_API_HOST="$ZOO_API_URL"
+      case "$ZOO_API_URL" in
+        https://*) export SUNNYLINK_ATHENA_HOST="wss://${ZOO_API_URL#https://}/ws/sp" ;;
+        http://*)  export SUNNYLINK_ATHENA_HOST="ws://${ZOO_API_URL#http://}/ws/sp" ;;
       esac
       export ZOO_BACKEND_ACTIVE=1
       ;;
