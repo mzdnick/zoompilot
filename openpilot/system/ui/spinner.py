@@ -29,7 +29,7 @@ DARKGRAY = (55, 55, 55, 255)
 GLOW_ASSET = "../../sunnypilot/selfdrive/assets/images/spinner_zoompilot_glow.png"
 GLOW_FRAMES = 75
 GLOW_GRID = 9
-GLOW_CELL = 360
+GLOW_CELL = 180
 GLOW_FPS = 30.0
 
 
