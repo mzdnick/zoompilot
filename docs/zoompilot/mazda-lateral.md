@@ -474,42 +474,51 @@ of `test_stock_passthrough`, exact payload accepted only while steering, every o
 button bit refused in every state; `test_tja_button_never_pressed_on_the_car_side`;
 `TestMazdaTjaMads` (both main edges guarded when declared, incl. the PEDALS path under alpha
 long); carstate `TestStockTja` (live, stale, the one-shot pulse) and `TestTjaButtonEvents`;
-`test_mazda_tja_press.py` (press cadence, cap, reset, a lateral pause not resetting, alpha
-long); `test_camera_tja_press_bytes`; the golden tx unchanged; mads `TestMadsTjaButton`;
+`test_mazda_tja_press.py` (the level clear: fires on armed+armed, waits on every button and
+session state, paces at the dwell, sustained with no budget, alpha long);
+`test_camera_tja_press_bytes`; the golden tx unchanged; mads `TestMadsTjaButton`;
 `TestMazdaStockCtsEvents` (WARNING only).
 
-### The press-induced MRCC arm and the undo (built 2026-09-18, merged 2026-09-25, opendbc 74fdc8686f)
+### The press-induced MRCC arm and the level clear (built 2026-09-18, reworked 2026-10-13, opendbc 6125ecfa)
 
 The arm cannot be prevented: the wheel's TJA frame reaches every bus-0 ECU directly, and PEDALS
 reflects it ~80 ms after the press edge. Left standing, it is cruise armed by a button the
 driver declared as the lateral switch, and it holds `mrcc off` false so the white wheel below
-never displays after the first press. When MRCC was OFF before the press, the controller
-answers with the driver's own MRCC master press. The pre-press sample is carstate's previous
-stable state, because PEDALS can show the arm in the same cycle as the edge.
+never displays after the first press. The first machine answered a press edge, and only when
+MRCC had been off before it; a main restored across ignition made that sample wrong and let
+the armed pair through (route 0000013b: 57 s of blind steering, a dash camera fault). The
+controller now runs one stateless level rule (2026-10-13):
 
-- The frame is the wheel's exact master-press shape: every button idle, `BIT1` low, byte
-  signature `00 81 fe Cx` with only `CTR` variable (`create_mrcc_off_cmd`). The panda accepts
-  it only on a declared car while the live arm is up (`mazda_acc_armed`: CRZ_CTRL bit 17 stock,
-  PEDALS bits after teardown). A lookalike that is not the exact shape is refused in every
-  state, so a composite command cannot borrow the cancel exception.
-- One press per 200 ms slot, at most three per unreconciled arm. 200 ms is both the body's
-  discrete-press ceiling (icbm.md: taps past ~5 Hz are dropped) and the stand-down pace: the
-  disarm reaches PEDALS ~80 ms after a press plus the 50 ms confirm, so the next slot reads the
-  cleared state. Nothing sends while PEDALS reads disarmed, where a master press would arm
-  instead of disarm.
-- Stand-downs: any wheel button (the driver's own cruise presses own the stream), the held TJA
-  press, a radar or stock-ECU session transition, and openpilot's own cancel or resume (waited
-  out, not aborted). Five raw-off frames confirm the arm is gone. If no arm ever appears, the
-  undo gives up after 1 s of brake-free time — PEDALS holds both cruise bits low under braking,
-  so the clock runs brake-free cycles only.
-- ICBM stays suppressed for the whole TJA hold: the wheel's press pattern owns the CRZ_BTNS
-  counter stream until release. The physical master press also publishes as a `mainCruise`
-  button event (latched against the parser's startup zeros), which the ICBM readiness gate in
-  the openpilot tree consumes: a held master press freezes ICBM's synthesized presses.
+- Condition, every cycle: the camera's own TJA reads armed or steering (`stock_tja != 0`), raw
+  PEDALS shows the main armed, and nothing else owns CRZ_BTNS. State 2 alone fires it, so the
+  pair never survives to a steering state or a second press.
+- The answer is the driver's own MRCC master press, the wheel's exact shape: every button
+  idle, `BIT1` low, byte signature `00 81 fe Cx` with only `CTR` variable
+  (`create_mrcc_off_cmd`). The panda accepts it only on a declared car while the live arm is
+  up (`mazda_acc_armed`: CRZ_CTRL bit 17 stock, PEDALS bits after teardown). The rule gates on
+  the same raw read, so no frame lands outside the exception. A lookalike that is not the
+  exact shape is refused in every state, so a composite command cannot borrow the cancel
+  exception.
+- One press per 200 ms slot, shared with ICBM's pacing, for as long as the condition holds,
+  with no press budget. 200 ms is both the body's discrete-press ceiling (icbm.md: taps past
+  ~5 Hz are dropped) and the stand-down pace: the disarm reaches PEDALS ~80 ms after a press
+  plus the 50 ms confirm, so the next slot reads the cleared state. Nothing sends while
+  PEDALS reads disarmed, where a master press would arm instead of disarm.
+- Suppression stands the condition down, never out: any held wheel button (TJA, the MRCC
+  master, cancel, RES, SET+/-, either DISTANCE), openpilot's own cancel or resume, and a
+  radar or stock-ECU session transition. A stale 0x440 reads 0 and leaves the rule inert.
+- ICBM stays suppressed while the condition holds: the clear owns the CRZ_BTNS counter
+  stream. The physical master press still publishes as a `mainCruise` button event (latched
+  against the parser's startup zeros), which the ICBM readiness gate in the openpilot tree
+  consumes.
+- A mid-cruise press costs one cruise release; the parent raises the silent
+  `stockTjaSteering` alert while the camera sits in its steering states (`carStateSP`'s
+  `zoompilot.stockTja` at 3+), naming the recovery.
 
-Undeclared cars ship byte-identical: no parse, no undo, no safety exception. Tests:
-`TestMrccUndo` and `TestMrccUndoShipsDark` in `test_mazda_tja_press.py`,
-`TestMrccButtonEvent`, and `TestMazdaMrccOffCleanup` on the safety side.
+Undeclared cars ship byte-identical: no parse, no clear, no safety exception. Tests:
+`TestStockTjaClear`, `TestRadarHandbackWaits` and `TestNoCameraPress` in
+`test_mazda_tja_press.py`, `TestMrccButtonEvent`, and `TestMazdaMrccOffCleanup` on the safety
+side.
 
 ### The white wheel (built 2026-09-18, merged 2026-09-25, opendbc dbd88fa682)
 
@@ -529,7 +538,7 @@ spot, outside the cadence. TJA 2 is not display-only; the body reads the same fr
 why the allowlist and the fail-closed default are the design (chinna244's finding, kept from
 the 2026-09-09 note above).
 
-The MRCC undo above is what makes the window reachable: without it, the press-induced arm
+The stock-TJA clear above is what makes the window reachable: without it, the press-induced arm
 keeps cruise-off false after the first press. Tests: `TestShipsDark` and `TestWhiteWheelGate`
 in `test_mazda_mads_white_wheel.py`, plus the mazdacan allowlist and interface raw-latch
 tests.
