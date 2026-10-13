@@ -294,6 +294,15 @@ EVENTS_SP: dict[int, dict[str, Alert | AlertCallbackType]] = {
     ET.PERMANENT: NormalPermanentAlert("Alpha Longitudinal Ready", duration=2.),
   },
 
+  # The camera's own traffic jam assist is steering (0x440 state 3+). The stock-TJA clear ends
+  # the window in under a second and releases cruise with it, so this names the recovery
+  # instead of alarming.
+  EventNameSP.stockTjaSteering: {
+    ET.PERMANENT: NormalPermanentAlert("Stock Traffic Jam Steering",
+                                       "Cruise released. Press MAIN, then SET to re-engage",
+                                       duration=3.),
+  },
+
   EventNameSP.experimentalModeSwitched: {
     ET.WARNING: NormalPermanentAlert("Experimental Mode Switched", duration=1.5)
   },

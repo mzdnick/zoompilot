@@ -378,6 +378,7 @@ struct OnroadEventSP @0xda96579883444c35 {
     longitudinalEnableChime @35;
     longitudinalDisableChime @36;
     stockLkasArming @37;
+    stockTjaSteering @38;
   }
 }
 
@@ -576,6 +577,10 @@ struct CarStateZP @0xc879af11c43cb400 {
   # The car's own lane keep is back on after the driver switched it off, and the EPS has not
   # applied torque since. MADS keeps the driver told lateral is disabled until it does.
   lkasArming @3 :Bool;
+  # The camera's own traffic jam assist state from 0x440: 0 off, 2 armed, 3+ steering, and 0
+  # whenever the frame goes stale. A physical TJA press arms it whatever the main switch does;
+  # the controller clears the arm it causes, so 3+ is the sub-second window before the clear.
+  stockTja @4 :UInt8;
 
   enum StockEcuState {
     notNeeded @0;

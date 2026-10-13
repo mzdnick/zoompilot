@@ -41,6 +41,8 @@ class CardExt:
     CS_SP.zoompilot.distanceFarther = bool(getattr(self.car_state, "distance_more_button", 0))
     # the EPS re-arming after the car's lane keep came back on, on the brands that track it
     CS_SP.zoompilot.lkasArming = bool(getattr(self.car_state, "lkas_arming", False))
+    # the camera's own traffic jam assist state: 0 off, 2 armed, 3+ steering, 0 when stale
+    CS_SP.zoompilot.stockTja = int(getattr(self.car_state, "stock_tja", 0))
 
   @property
   def stock_ecu_state(self) -> StockEcuState:

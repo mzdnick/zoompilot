@@ -72,6 +72,10 @@ class CarSpecificEventsSP:
       if mads_enabled and CS_SP.zoompilot.lkasArming:
         # LKA back on with lateral coming back, the EPS not delivering yet
         events_sp.add(EventNameSP.stockLkasArming)
+      if CS_SP.zoompilot.stockTja >= 3:
+        # State 3+ means the camera believes it is steering. The stock-TJA clear ends the
+        # window in under a second and releases cruise with it; the alert names the recovery.
+        events_sp.add(EventNameSP.stockTjaSteering)
 
     # A SET/RES press before the stock ECU openpilot stands in for is owned lands on a body
     # that will not engage (Mazda route 0000020d: six presses, nothing shown): name what the
