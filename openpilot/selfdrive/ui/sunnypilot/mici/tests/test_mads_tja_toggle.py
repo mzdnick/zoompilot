@@ -46,3 +46,17 @@ class TestMadsTjaToggle:
     _bundle(params, "mazda")
     render(layout)
     assert layout._tja_button_toggle.is_visible
+
+  def test_tici_selectable_only_with_mads(self, params):
+    # tests run offroad, so the offroad gate is true and the Mads toggle decides
+    from openpilot.selfdrive.ui.ui_state import ui_state
+    from openpilot.selfdrive.ui.sunnypilot.layouts.settings.steering_sub_layouts.mads_settings import MadsSettingsLayout
+    ui_state.CP = None
+    layout = MadsSettingsLayout(lambda: None)
+    _bundle(params, "mazda")
+    params.put_bool("Mads", False, block=True)
+    render(layout)
+    assert not layout._tja_button_toggle.action_item.enabled
+    params.put_bool("Mads", True, block=True)
+    render(layout)
+    assert layout._tja_button_toggle.action_item.enabled

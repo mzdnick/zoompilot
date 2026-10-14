@@ -30,6 +30,7 @@ MADS_UNIFIED_ENGAGEMENT_MODE_BASE_DESC = "{engage}<br><h4>{note}</h4>".format(
 
 MADS_TJA_BUTTON_DESC = tr("The physical TJA button toggles Automatic Lane Centering and MRCC only controls cruise. "
                           + "Main Cruise and UEM no longer engage or disengage lateral control. Enable only if your car has the button.")
+MADS_TJA_REQUIRES_MADS = tr("Requires MADS: with MADS off the button keeps the car's stock behavior.")
 
 STATUS_CHECK_COMPATIBILITY = tr("Start the vehicle to check vehicle compatibility.")
 DEFAULT_TO_OFF = tr("This feature defaults to OFF, and does not allow selection due to vehicle limitations.")
@@ -70,7 +71,8 @@ class MadsSettingsLayout(Widget):
       title=lambda: tr("Mazda TJA Button"),
       description=MADS_TJA_BUTTON_DESC,
       param="MazdaTjaButton",
-      enabled=ui_state.is_offroad,
+      # the declaration only means something with MADS on; the live callable also keeps the offroad gate
+      enabled=lambda: ui_state.is_offroad() and ui_state.params.get_bool("Mads"),
     )
     self._tja_button_toggle.set_visible(lambda: ui_state.offroad_brand() == "mazda")
 
@@ -150,3 +152,8 @@ class MadsSettingsLayout(Widget):
 
       self._steering_mode.action_item.set_enabled(True)
       self._steering_mode.action_item.set_enabled_buttons(None)
+
+    if ui_state.params.get_bool("Mads"):
+      self._tja_button_toggle.set_description(MADS_TJA_BUTTON_DESC)
+    else:
+      self._tja_button_toggle.set_description("<b>" + MADS_TJA_REQUIRES_MADS + "</b><br>" + MADS_TJA_BUTTON_DESC)
