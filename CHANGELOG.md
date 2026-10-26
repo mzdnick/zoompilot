@@ -8,15 +8,20 @@ zoompilot vUNRELEASED
   * Dynamic Experimental Control is removed.
   * Prefer coasting over braking in Alpha longitudinal. Curves and speed limits still brake.
   * Speed Assist improvements to reach your set speed more often.
+  * Speed Assist and Lead Follow Assist are now on by default, existing installs too.
+  * The alpha longitudinal switch can be changed onroad while disengaged.
   * Slow for Curves: Map holds its curve targets between GPS fixes and drops them
     when GPS is lost.
 * Experimental Mode is indicated in comma 4 confidence ball when enabled.
+* Road edge lane change block can be off, audible or silent.
+* Home can show the driving model's name (Display settings).
 * Mazda
   * Steering tuning improvements from reverse engineering work.
   * CX-5: steering delay learning starts at 0.25 s.
   * Blind spot monitoring follows upstream's new BSM flag.
   * 2017 Mazda 3 2.5 L is recognized automatically.
   * 2026 CX-5 outside North America is recognized automatically.
+  * A camera fault no longer shows as LKAS off.
 * jetlink
   * Jetlink-only models can be picked in sunnylink.
   * Flip Flop and Mountain Dew v3 are listed separately.
