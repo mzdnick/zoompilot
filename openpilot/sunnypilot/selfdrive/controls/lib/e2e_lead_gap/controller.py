@@ -160,7 +160,8 @@ class E2ELeadGapController:
     self.frame += 1
     self._update_params()
 
-    if not self.enabled:
+    # switched off with a lift on: it goes out at BOOST_RISE below, then the controller idles
+    if not self.enabled and self.boost == 0.:
       self._reset(Inhibit.disabled)
       return a_model
     if not is_e2e or reset_state:
@@ -210,6 +211,10 @@ class E2ELeadGapController:
 
     headroom = max(0., min(a_mpc, a_cruise) - a_model)
     target = self.authority * self.gain * self.weight * min(CAP[personality], headroom)
+    if not self.enabled:
+      # a switch-off is no trip: the lift goes out as gently as it came in
+      target = min(target, max(0., self.boost - BOOST_RISE * self.dt))
+      self.inhibit = Inhibit.disabled
     # falls at once (a binding MPC or a trip), rises at BOOST_RISE
     self.boost = min(target, self.boost + BOOST_RISE * self.dt, headroom)
     return a_model + self.boost

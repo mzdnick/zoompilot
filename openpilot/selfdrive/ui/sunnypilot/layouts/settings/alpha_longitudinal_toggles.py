@@ -71,8 +71,10 @@ class AlphaLongitudinalToggles:
     has_long = CP is not None and ui_state.has_longitudinal_control
     self._alpha_long_toggle.set_visible(CP is not None and CP.alphaLongitudinalAvailable)
     self._experimental_toggle.action_item.set_enabled(CP is None or has_long)
-    self._set_speed_toggle.action_item.set_enabled(has_long)
-    self._lead_gap_toggle.action_item.set_enabled(has_long)
+    # these only act in experimental mode: locked without it, keeping their values
+    assists = has_long and self._experimental_toggle.action_item.get_state()
+    self._set_speed_toggle.action_item.set_enabled(assists)
+    self._lead_gap_toggle.action_item.set_enabled(assists)
 
   def refresh(self):
     for key, item in self._refresh_toggles:
