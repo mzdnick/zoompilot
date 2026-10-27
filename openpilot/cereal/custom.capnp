@@ -739,13 +739,14 @@ struct LongitudinalPlanZP @0xc3b0556e1118c2db {
   # Experimental mode's set-speed floor (sunnypilot/selfdrive/controls/lib/e2e_set_speed):
   # what it added to the model's acceleration and, when nothing, why.
   struct E2ESetSpeed {
-    authority @0 :Float32;     # 1, or 0 while a hazard holds the boost off (0..1 rate-limited before 2026-10)
-    gain @1 :Float32;          # 0..1 from the model's own acceleration
-    floor @2 :Float32;         # m/s^2 the boost pulls toward
-    boost @3 :Float32;         # m/s^2 added to the model's acceleration
+    authority @0 :Float32;     # retired 2026-10-27; 1, or 0 while a hazard held the boost off
+    gain @1 :Float32;          # 0..1 from the model's own acceleration and throttle probability, and speed
+    floor @2 :Float32;         # m/s^2 the lift pulls toward
+    boost @3 :Float32;         # m/s^2 added to the model's acceleration, never negative since 2026-10-27
     inhibit @4 :Inhibit;
-    bound @5 :Float32;         # m/s^2 the speed envelope allows
-    added @6 :Float32;         # m/s this controller has put on the car, handed back over the envelope
+    bound @5 :Float32;         # retired 2026-10-27; m/s^2 the speed envelope allowed
+    added @6 :Float32;         # retired 2026-10-27; m/s the envelope had put on the car
+    fade @7 :Float32;          # 0..1 from the bend ahead at the current speed
 
     enum Inhibit {
       disabled @0;      # the ExperimentalModeSetSpeed toggle is off (and logs from before it)
@@ -753,15 +754,15 @@ struct LongitudinalPlanZP @0xc3b0556e1118c2db {
       inactive @2;      # not e2e, or long control reset
       decActive @3;     # retired 2026-10, older logs only
       invalid @4;
-      hold @5;          # a hazard cleared less than the hold time ago
-      fcw @6;
-      hardBrake @7;
-      forceDecel @8;
+      hold @5;          # retired 2026-10-27, older logs only
+      fcw @6;           # retired 2026-10-27, older logs only
+      hardBrake @7;     # retired 2026-10-27, older logs only
+      forceDecel @8;    # retired 2026-10-27, older logs only
       stop @9;          # retired 2026-10, older logs only (the envelope covers stops)
-      lead @10;
-      driver @11;       # gas or brake pressed
-      modelBraking @12; # gain at zero (a trip before 2026-10)
-      planSlowing @13;  # the envelope below the floor (a trip before 2026-10)
+      lead @10;         # retired 2026-10-27, older logs only
+      driver @11;       # retired 2026-10-27, older logs only
+      modelBraking @12; # retired 2026-10-27, older logs only
+      planSlowing @13;  # retired 2026-10-27, older logs only
       lateral @14;      # retired 2026-10, older logs only
       coast @15;        # retired 2026-10, older logs only
       laneChange @16;

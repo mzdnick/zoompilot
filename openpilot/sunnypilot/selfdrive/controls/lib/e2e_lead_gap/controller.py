@@ -68,6 +68,7 @@ BOOST_RISE = 0.25  # m/s^3
 # Re-arms at the nudge's original rate: behind a lead the picture changes faster than on an empty road.
 AUTHORITY_RISE = 0.5  # 1/s
 AUTHORITY_FALL = 4.0  # 1/s
+HOLD_TIME = 3.0  # s after the last trip
 
 LEAD_T_IDXS = np.asarray(ModelConstants.LEAD_T_IDXS)
 T_IDXS = nudge.T_IDXS
@@ -90,7 +91,7 @@ class E2ELeadGapController:
   def __init__(self, params=None, dt: float = DT_MDL):
     self.params = params or Params()
     self.dt = dt
-    self.hold_frames = int(round(nudge.HOLD_TIME / dt))
+    self.hold_frames = int(round(HOLD_TIME / dt))
     self.params_frames = int(PARAMS_UPDATE_PERIOD / dt)
     self.frame = -1
     self.enabled = False

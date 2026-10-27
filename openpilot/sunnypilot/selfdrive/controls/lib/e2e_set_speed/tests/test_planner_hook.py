@@ -10,13 +10,12 @@ import numpy as np
 import pytest
 
 from openpilot.cereal import messaging
-from openpilot.common.realtime import DT_MDL
 from openpilot.selfdrive.controls.lib.accel_boost import AccelBoost
 from openpilot.selfdrive.controls.lib.longitudinal_mpc_lib.long_mpc import T_IDXS as T_IDXS_MPC
 from openpilot.selfdrive.controls.lib.longitudinal_planner import LongitudinalPlanner, LongitudinalPlanSource
 from openpilot.sunnypilot.selfdrive.car.tests.fakes import FakeParams
 from openpilot.sunnypilot.selfdrive.controls.lib.tests.test_experimental_gate import build_planner, build_sm
-from openpilot.sunnypilot.selfdrive.controls.lib.e2e_set_speed.controller import FLOOR_MAX, E2ESetSpeedController, Inhibit
+from openpilot.sunnypilot.selfdrive.controls.lib.e2e_set_speed.controller import E2ESetSpeedController, Inhibit
 
 MODEL_ACCEL = 0.
 
@@ -61,8 +60,10 @@ def test_off_is_upstream():
 def test_on_raises_the_e2e_candidate():
   planner = run_planner(True)
   assert planner.e2e_set_speed.inhibit == Inhibit.none
-  assert planner.mpc.source == LongitudinalPlanSource.e2e
-  assert planner.output_a_target == pytest.approx(FLOOR_MAX)
+  # the model holding at 0 under the set speed: experimental drives as chill would
+  assert planner.e2e_set_speed.lift == pytest.approx(planner.a_cruise)
+  assert planner.output_a_target == pytest.approx(planner.a_cruise)
+  assert planner.a_cruise > 1.
 
 
 def test_plan_reports_the_floor():
@@ -73,23 +74,20 @@ def test_plan_reports_the_floor():
   planner.publish_longitudinal_plan_sp(planner_sm(), pm)
   report = sent['longitudinalPlanSP'].longitudinalPlanSP.zoompilot.e2eSetSpeed
   assert report.inhibit == Inhibit.none
-  assert report.boost == pytest.approx(planner.e2e_set_speed.boost)
-  assert report.authority == pytest.approx(1.)
+  assert report.boost == pytest.approx(planner.e2e_set_speed.lift)
+  assert (report.gain, report.fade) == (1., 1.)
 
 
-def test_publishing_counts_the_speed_that_reached_the_car():
-  # as plannerd runs it: update, then publish. The stubbed MPC resets its source every update, as the
-  # real one does, so the count cannot come from the source enum.
+def test_throttle_probability_reaches_the_floor():
   planner = run_planner(True, frames=0)
-  pm = messaging.PubMaster(['longitudinalPlanSP'])
-  pm.send = lambda service, msg: None
   sm = planner_sm()
-  for _ in range(100):
+  model = sm['modelV2'].as_builder()
+  model.meta.disengagePredictions.gasPressProbs = [0.9, 0.25, 0.1]
+  sm['modelV2'] = model.as_reader()
+  for _ in range(200):
     planner.update(sm)
-    planner.publish_longitudinal_plan_sp(sm, pm)
-  boost = planner.e2e_set_speed.boost
-  assert boost > 0.
-  assert planner.e2e_set_speed.added > 0.5 * boost * 100 * DT_MDL
+  assert planner.e2e_set_speed.gain == pytest.approx(0.25)
+  assert planner.e2e_set_speed.lift == pytest.approx(0.25 * planner.a_cruise, rel=1e-3)
 
 
 def gas_pressed_planner(enabled: bool) -> LongitudinalPlanner:

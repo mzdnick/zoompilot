@@ -18,7 +18,7 @@ V = 20.
 STANDARD = log.LongitudinalPersonality.standard
 FAR = desired_gap(V, V, STANDARD) + 30.  # well past the band
 A_MPC = 1.0  # the MPC wants to close in
-SETTLED = int((c.nudge.HOLD_TIME + 1. / c.AUTHORITY_RISE + CAP[int(STANDARD)] / c.BOOST_RISE) / DT) + 10
+SETTLED = int((c.HOLD_TIME + 1. / c.AUTHORITY_RISE + CAP[int(STANDARD)] / c.BOOST_RISE) / DT) + 10
 
 
 def run(sm, frames=SETTLED, a_model=0., a_mpc=A_MPC, enabled=True, ctl=None, **overrides):
@@ -118,7 +118,7 @@ def test_new_lead_waits_out_the_hold():
   ctl, _ = run(build_sm(V, FAR))
   _, out = run(build_sm(V, FAR - 15.), frames=1, ctl=ctl)
   assert ctl.inhibit == Inhibit.leadChanged
-  _, out = run(build_sm(V, FAR - 15.), frames=int(c.nudge.HOLD_TIME / DT) - 1, ctl=ctl)
+  _, out = run(build_sm(V, FAR - 15.), frames=int(c.HOLD_TIME / DT) - 1, ctl=ctl)
   assert ctl.inhibit == Inhibit.hold and out == 0.
 
 
