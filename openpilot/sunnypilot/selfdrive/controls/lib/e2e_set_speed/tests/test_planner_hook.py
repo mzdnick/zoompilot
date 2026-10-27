@@ -20,6 +20,16 @@ from openpilot.sunnypilot.selfdrive.controls.lib.e2e_set_speed.controller import
 MODEL_ACCEL = 0.
 
 
+def lead_mpc(mpc, accel: float) -> None:
+  """The MPC holding a lead's gap at a steady accel, below the cruise candidate."""
+  def update(radarstate, personality=None):
+    mpc.v_solution = mpc.x0[1] + accel * T_IDXS_MPC
+    mpc.a_solution = np.full(len(T_IDXS_MPC), accel)
+    mpc.j_solution = np.zeros(len(T_IDXS_MPC) - 1)
+    mpc.source = LongitudinalPlanSource.lead0
+  mpc.update = update
+
+
 def no_lead_mpc(mpc) -> None:
   """The MPC with no lead chases its synthetic fast lead: the logged candidate sits near +2 m/s^2
   (p50 1.98), far above anything the floor asks for. Stub that rather than depend on the solver."""
@@ -64,6 +74,17 @@ def test_on_raises_the_e2e_candidate():
   assert planner.e2e_set_speed.lift == pytest.approx(planner.a_cruise)
   assert planner.output_a_target == pytest.approx(planner.a_cruise)
   assert planner.a_cruise > 1.
+
+
+def test_behind_a_lead_follows_as_chill():
+  # the model hanging back behind a lead the MPC would close on: lifted to the MPC, not past it
+  planner = run_planner(True, frames=0)
+  lead_mpc(planner.mpc, 0.3)
+  sm = planner_sm()
+  for _ in range(200):
+    planner.update(sm)
+  assert planner.e2e_set_speed.lift == pytest.approx(0.3)
+  assert planner.output_a_target == pytest.approx(0.3)
 
 
 def test_plan_reports_the_floor():

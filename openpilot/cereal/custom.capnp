@@ -673,13 +673,13 @@ struct CarControlZP @0xaadf9bc39b7bd41e {
 struct LongitudinalPlanZP @0xc3b0556e1118c2db {
   e2eSetSpeed @0 :E2ESetSpeed;
   leadForecast @1 :LeadForecast;
-  e2eLeadGap @2 :E2ELeadGap;
+  e2eLeadGap @2 :E2ELeadGap;  # retired 2026-10-27, folded into e2eSetSpeed; older logs only
   # lowest planned speed on the model horizon, m/s (smart cruise control vision); 0 = no
   # lookahead (feature off, long disabled, or no model), 255 caps "nothing binding ahead"
   sccVAheadMin @3 :Float32;
 
-  # Experimental mode's follow-distance assist (sunnypilot/selfdrive/controls/lib/e2e_lead_gap):
-  # what it added to the model's acceleration behind a lead and, when nothing, why.
+  # Experimental mode's follow-distance assist, retired 2026-10-27 (Set Speed Assist lifts toward the
+  # lead MPC too): what it added to the model's acceleration behind a lead and, when nothing, why.
   struct E2ELeadGap {
     authority @0 :Float32;     # 0..1, rate-limited
     gain @1 :Float32;          # 0..1 from the model's own acceleration
@@ -737,12 +737,12 @@ struct LongitudinalPlanZP @0xc3b0556e1118c2db {
     }
   }
 
-  # Experimental mode's set-speed floor (sunnypilot/selfdrive/controls/lib/e2e_set_speed):
+  # Experimental mode's Set Speed Assist (sunnypilot/selfdrive/controls/lib/e2e_set_speed):
   # what it added to the model's acceleration and, when nothing, why.
   struct E2ESetSpeed {
     authority @0 :Float32;     # retired 2026-10-27; 1, or 0 while a hazard held the boost off
     gain @1 :Float32;          # 0..1 from the model's own acceleration and throttle probability, and speed
-    floor @2 :Float32;         # m/s^2 the lift pulls toward
+    floor @2 :Float32;         # m/s^2 the lift pulls toward: chill's answer, min(lead MPC, cruise)
     boost @3 :Float32;         # m/s^2 added to the model's acceleration, never negative since 2026-10-27
     inhibit @4 :Inhibit;
     bound @5 :Float32;         # retired 2026-10-27; m/s^2 the speed envelope allowed

@@ -4,31 +4,28 @@ Copyright (c) 2026-, Zeph Leggett.
 This file is part of zoompilot and is licensed under the MIT License.
 See the LICENSE.md file in the root directory for more details.
 
-Set-speed floor for experimental mode.
+Set Speed Assist for experimental mode.
 
-The driving model has no set-speed input. With no lead it cruises at its own pace, and the
-planner's min() keeps the car there: in our experimental-mode logs the model was the binding
-candidate for 90% of lead-free straight cruise, a median 5.5 mph under the set speed. It
-accelerates lazily and then holds.
+The driving model has no set-speed input and keeps its own following distance. With no lead it
+cruises at its own pace, a median 5.5 mph under the set speed in our experimental-mode logs; behind
+a lead it followed a median 57 m further back than long_mpc's gap on aggressive. The planner's
+min() keeps the car at the model's pace either way.
 
-This lifts the e2e candidate toward the planner's own cruise candidate and never lowers it:
+This lifts the e2e candidate toward what chill mode would do and never lowers it:
 
   e2e = a_model + lift,  lift -> gain * fade * max(0, floor - a_model)
 
-floor is the cruise candidate the planner builds for chill mode (upstream's cruise law with SCC
-and SLA's targets), so with nothing to slow for experimental mode drives as chill does. gain fades
-the lift out as the model eases off (its own acceleration and its throttle probability), and fade
-as the road ahead bends at the current speed. Every slowdown is the model's: the lift only lets go
-of it.
+floor is chill mode's answer, the lower of the planner's own lead MPC and cruise candidates
+(upstream's cruise law with SCC and SLA's targets), so with nothing to slow for experimental mode
+drives and follows as chill does. gain fades the lift out as the model eases off (its own
+acceleration and its throttle probability) and below walking pace, and fade as the road ahead bends
+at the current speed. Every slowdown is the model's: the lift only lets go of it, and a lead that
+brakes binds through the MPC candidate at once.
 
 A lift that could go negative made the car pump on a straight road: the plan's far end flickers
 by several mph from one frame to the next, and handing back added speed on each flicker
 alternated throttle and brake every 15-20 s. Read only through the model's own acceleration and
-probability, and the road's geometry, the lift has no such input to chase.
-
-Without a lead nothing above the e2e candidate bounds it (the MPC's synthetic lead and the e2e
-cruise candidate both sit near +2 m/s^2). A lead's MPC, SCC vision and SLA all sit below it in the
-planner's min(), so they bound the lift as they bound chill mode. Design and data:
+probability, and the road's geometry, the lift has no such input to chase. Design and data:
 docs/zoompilot/e2e-set-speed.md.
 """
 import math
@@ -96,10 +93,10 @@ class E2ESetSpeedController:
     msg.boost = float(self.lift)
     msg.inhibit = self.inhibit
 
-  def update(self, sm: messaging.SubMaster, a_model: float, a_cruise: float, is_e2e: bool, reset_state: bool,
+  def update(self, sm: messaging.SubMaster, a_model: float, a_chill: float, is_e2e: bool, reset_state: bool,
              steer_lat_accel: float = 0.) -> float:
     """Return the e2e candidate; a_model unchanged whenever the feature is off or idle.
-    a_cruise: the planner's cruise candidate, chill mode's acceleration.
+    a_chill: chill mode's acceleration, the lower of the planner's lead MPC and cruise candidates.
     steer_lat_accel: lateral acceleration from the measured steering angle."""
     self.frame += 1
     self._update_params()
@@ -121,7 +118,7 @@ class E2ESetSpeedController:
     throttle_prob = throttle_probs[1] if len(throttle_probs) > 1 else 1.
     if (len(vel) != ModelConstants.IDX_N or len(yaw_rate) != ModelConstants.IDX_N or
         not (np.isfinite(vel).all() and np.isfinite(yaw_rate).all()) or
-        not all(math.isfinite(x) for x in (v_ego, a_model, a_cruise, throttle_prob, curvature))):
+        not all(math.isfinite(x) for x in (v_ego, a_model, a_chill, throttle_prob, curvature))):
       self._reset(Inhibit.invalid)
       return a_model
 
@@ -130,7 +127,7 @@ class E2ESetSpeedController:
     kappa_ahead = float(np.max((np.abs(yaw_rate) / np.maximum(vel, 1.))[LAT_MASK]))
     lat_ahead = max(lat_now, kappa_ahead * v_ego ** 2)
 
-    self.floor = a_cruise
+    self.floor = a_chill
     # stop-and-go stays the model's: the gain fades in above walking pace
     self.gain = (float(np.interp(a_model, GAIN_BP, [0., 1.])) * float(np.clip(throttle_prob, 0., 1.)) *
                  float(np.interp(v_ego, [MIN_SPEED, FULL_SPEED], [0., 1.])))

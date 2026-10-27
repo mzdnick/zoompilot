@@ -35,7 +35,7 @@ def test_moved_switches_appear_once(params):
 
   alpha = AlphaLongitudinalToggles()
   assert [key for key, _ in alpha._refresh_toggles] == [
-    "AlphaLongitudinalEnabled", "ExperimentalMode", "ExperimentalModeSetSpeed", "ExperimentalModeLeadGap"]
+    "AlphaLongitudinalEnabled", "ExperimentalMode", "ExperimentalModeSetSpeed"]
 
 
 def test_alpha_longitudinal_heads_cruise(params, monkeypatch):
@@ -84,7 +84,6 @@ def test_assists_grey_out_without_long_or_experimental(params, monkeypatch):
     layout._experimental_toggle.action_item.set_state(experimental)
     layout.update_state()
     assert layout._set_speed_toggle.action_item.enabled == (has_long and experimental)
-    assert layout._lead_gap_toggle.action_item.enabled == (has_long and experimental)
   assert params.get_bool("ExperimentalModeSetSpeed")  # locked, not cleared
   params.remove("ExperimentalModeSetSpeed")
 

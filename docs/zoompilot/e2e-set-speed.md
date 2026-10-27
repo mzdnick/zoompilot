@@ -1,10 +1,11 @@
-# Set speed in experimental mode
+# Set Speed Assist in experimental mode
 
 Code: `openpilot/sunnypilot/selfdrive/controls/lib/e2e_set_speed/controller.py`, called from
 one hook after the e2e candidate in `openpilot/selfdrive/controls/lib/longitudinal_planner.py`
-through `LongitudinalPlannerSP.update_e2e_target`. Toggle "Experimental Mode Speed Assist" ("speed assist" on mici) (`ExperimentalModeSetSpeed`), on
-by default since 2026-10-26, under Cruise > Alpha Longitudinal (tizi, mici, sunnylink), greyed while Dynamic
-Experimental Control is on. Logged in
+through `LongitudinalPlannerSP.update_e2e_target`. Toggle "Set Speed Assist" ("set speed assist"
+on mici, badge "speed") (`ExperimentalModeSetSpeed`), on by default since 2026-10-26, under Cruise >
+Alpha Longitudinal (tizi, mici, sunnylink), locked outside experimental mode. Lead Follow Assist
+(`docs/zoompilot/e2e-lead-gap.md`) was folded into it on 2026-10-27. Logged in
 `longitudinalPlanSP.zoompilot.e2eSetSpeed`. Tests: `e2e_set_speed/tests/`. Tool:
 `tools/mazda_long/e2e_set_speed_replay.py`.
 
@@ -35,16 +36,20 @@ case. With a lead the MPC only binds near its own ~2 s gap, while the model pace
 ```
 e2e   = a_model + lift
 lift -> gain * fade * max(0, floor - a_model)      rise at upstream's cruise jerk, fall 2.4 m/s^3
-floor = a_cruise
+floor = min(a_mpc, a_cruise)
 gain  = interp(a_model, [-0.3, -0.1], [0, 1]) * gasPressProbs[1] * fade-in over 5-8 m/s
 fade  = interp(v_ego^2 * max curvature over the next 10 s (or now), [0.6, 1.0] m/s^2, [1, 0])
 ```
 
-`a_cruise` is the planner's cruise candidate: upstream's chill cruise law (`clip(v_target - v_ego,
--0.5, ACCEL_MAX)` at upstream's cruise jerk), toward the target after SCC vision, SCC map and SLA,
-and SCC's rebuild of it in a bend. The planner already takes the minimum over it, so the lift can
-never put the e2e candidate above it: with nothing to slow for, experimental mode drives exactly
-as chill does, on any car, and needs no gap-closing law of its own. (Before 2026-10-27 the floor
+The floor is chill mode's answer: the lower of the planner's own lead MPC candidate (this frame's
+solution, as the host takes it) and its cruise candidate, upstream's chill cruise law
+(`clip(v_target - v_ego, -0.5, ACCEL_MAX)` at upstream's cruise jerk) toward the target after SCC
+vision, SCC map and SLA, and SCC's rebuild of it in a bend. The planner already takes the minimum
+over both, so the lift can never put the e2e candidate above them: with nothing to slow for,
+experimental mode drives and follows exactly as chill does, on any car, and needs no gap-closing
+law of its own. Behind a lead that means the personality's gap (the model alone followed a median
+57 m further back on aggressive); a lead that brakes binds through the MPC candidate at once. With
+no lead the MPC chases its synthetic lead near +2 m/s^2 and the cruise candidate is the floor. (Before 2026-10-27 the floor
 was its own gentler law, `clip((v_target - v_ego) / 6 s, 0, 0.8)` after stock MRCC, with a copy of
 upstream's friction circle.) The lift is never negative:
 every slowdown is the model's, and the lift only lets go of it, at 2.4 m/s^3 so the model's own
@@ -106,7 +111,7 @@ add under DEC.
 ## Expected behaviour
 
 What the car should feel: the lift picks up within a second or two on an open road and holds the
-set speed; the model's own easing off or braking takes it away at once, and nothing but the model
+set speed, and behind a steady lead it closes to chill's gap for the personality; the model's own easing off or braking takes it away at once, and nothing but the model
 ever slows the car. Bends ahead fade it out before the car gets there.
 
 On the car, lead-free e2e cruise: command sign flips no more than the model alone (2-3 a minute),
@@ -114,6 +119,9 @@ deficit near the set speed p50 under 1 mph, no frames with `boost` over 0.2 whil
 past -0.5, lift under 0.1 within 1 s of the model passing -0.3. Then compare apex lateral
 acceleration (about 30 apexes) and yellow-light approaches against the toggle off on the same
 roads. If bends come in fast, lower `FADE_LAT_BP`; if it surges at the set speed, look at `gain`.
+Behind leads: lead frames under 1 s gap against chill, and closing on a car the model sees but
+radarState drops (on a camera-only car the MPC then reads the road as clear; chill does the same, and
+the lift lets go only once the model brakes).
 
 ## Tried and rejected
 
