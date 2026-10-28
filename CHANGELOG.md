@@ -13,6 +13,7 @@ zoompilot vUNRELEASED
   * Lead Follow Assist is folded into Set Speed Assist: one toggle.
   * Set Speed Assist is now on by default, existing installs too.
   * The alpha longitudinal switch can be changed onroad while disengaged.
+  * If stock cruise could not be handed back, the next drive says so: restart the car.
   * Slow for Curves: Map holds its curve targets between GPS fixes and drops them
     when GPS is lost.
 * Experimental Mode is indicated in comma 4 confidence ball when enabled.
