@@ -58,7 +58,7 @@ class ModelOptions:
                                                 "Positive moves the car left, negative right. Not with the Default model."))
     self.camera_offset.set_enabled(lambda: ui_state.active_runner_tinygrad)
 
-    # after the panel's own rows; lane_center sits among them
+    # between the panel's jetlink and refresh models rows; lane_center sits above them
     self.items = [self.lane_turn, self.lane_turn_speed, self.live_delay, self.steer_delay, self.camera_offset]
 
   def refresh(self):
