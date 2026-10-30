@@ -17,7 +17,7 @@ from openpilot.sunnypilot.models.fetcher import ModelCache
 # published as sunnypilot manifest bundles. The catalog follows the driving_models
 # bundle schema, so entries merge into the qcom catalog and ride the existing
 # selector, downloader, and modeld_v2 without fork-specific device code.
-SPZ_CATALOG_URL = "https://huggingface.co/buckets/zoompilot/zoompilot_models/resolve/spz_models.json"
+SPZ_CATALOG_URL = "https://huggingface.co/datasets/zoompilot/zoompilot_models/resolve/main/spz_models.json"
 
 # every bundle key ModelParser._parse_bundle reads; the catalog generator emits these
 REQUIRED_BUNDLE_KEYS = frozenset((
