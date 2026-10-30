@@ -1,0 +1,195 @@
+name: build spz models
+
+# Compile StarPilot's spz fine-tunes (ONNX sources on their HuggingFace bucket) into
+# modeld_v2 artifacts with zoompilot's own tinygrad, and publish them as sunnypilot
+# manifest bundles the device merges into the qcom catalog (spz_source.py).
+#
+# The compile runs on the self-hosted tici like build-default-models, so artifacts are
+# QCOM-native. Daily watch + manual dispatch; only new or changed ONNX sources compile.
+
+env:
+  STARPILOT_MANIFEST_URL: "https://huggingface.co/buckets/StarPilot-Driving/StarPilot-Resources/resolve/manifests/model_names_v26.json"
+  STARPILOT_RESOLVE: "https://huggingface.co/buckets/StarPilot-Driving/StarPilot-Resources/resolve"
+  HF_REPO: "zoompilot/zoompilot_models"
+  HF_CATALOG_URL: "https://huggingface.co/datasets/zoompilot/zoompilot_models/resolve/main/spz_models.json"
+
+on:
+  workflow_dispatch:
+    inputs:
+      only:
+        description: 'Comma-separated spz model ids to rebuild (default: all pending)'
+        required: false
+        default: ''
+      force:
+        description: 'Rebuild even when the ONNX source is unchanged'
+        type: boolean
+        default: false
+  schedule:
+    - cron: '0 5 * * *'
+
+concurrency:
+  group: build-spz-models
+  cancel-in-progress: false
+
+jobs:
+  resolve:
+    runs-on: ubuntu-24.04
+    outputs:
+      pending: ${{ steps.pending.outputs.pending }}
+    steps:
+      - name: Find spz models whose source is new or changed
+        id: pending
+        env:
+          ONLY: ${{ inputs.only }}
+          FORCE: ${{ inputs.force }}
+        run: |
+          curl -fsSL --retry 3 "$STARPILOT_MANIFEST_URL" -o starpilot.json
+          export PREVIOUS_SHA=$(mktemp)
+          curl -fsSL --retry 2 "$HF_CATALOG_URL" -o "$PREVIOUS_SHA" || echo '{"bundles":[]}' > "$PREVIOUS_SHA"
+          python3 <<'EOF'
+          import hashlib, json, os, urllib.request
+
+          starpilot = json.load(open("starpilot.json"))["models"]
+          published = {b.get("spz", {}).get("source_onnx_sha256")
+                       for b in json.load(open(os.environ["PREVIOUS_SHA"]))["bundles"]} \
+                      if os.environ.get("PREVIOUS_SHA") else set()
+          only = {m.strip() for m in os.environ.get("ONLY", "").split(",") if m.strip()}
+          force = os.environ.get("FORCE") == "true"
+
+          pending = []
+          for entry in starpilot:
+            model_id = entry.get("id", "")
+            if not model_id.startswith("spz_") or (only and model_id not in only):
+              continue
+            # their manifest lists no ONNX digest, so hash the source itself
+            url = f"{os.environ['STARPILOT_RESOLVE']}/onnx/{model_id}/{model_id}_driving_supercombo.onnx"
+            digest = hashlib.sha256()
+            with urllib.request.urlopen(url, timeout=120) as response:
+              for block in iter(lambda: response.read(1 << 20), b""):
+                digest.update(block)
+            onnx_sha = digest.hexdigest()
+            if force or onnx_sha not in published:
+              pending.append({"id": model_id, "name": entry["name"], "version": entry["version"],
+                              "released": entry.get("released", ""), "onnx_sha256": onnx_sha, "onnx_url": url})
+
+          with open(os.environ["GITHUB_OUTPUT"], "a") as out:
+            out.write(f"pending={json.dumps(pending)}\n")
+          print(f"pending: {[m['id'] for m in pending]}")
+          EOF
+
+      - name: Save pending list and previous catalog
+        run: |
+          mkdir -p resolve_out
+          echo '${{ steps.pending.outputs.pending }}' > resolve_out/pending.json
+          curl -fsSL --retry 2 "$HF_CATALOG_URL" -o resolve_out/spz_models.json || echo '{"bundles":[]}' > resolve_out/spz_models.json
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: spz-resolve
+          path: resolve_out/
+
+  build:
+    needs: resolve
+    if: fromJson(needs.resolve.outputs.pending) != null && fromJson(needs.resolve.outputs.pending) != []
+    runs-on: [self-hosted, tici]
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: recursive
+
+      - uses: actions/download-artifact@v4
+        with:
+          name: spz-resolve
+          path: resolve_out/
+
+      - name: Set environment variables
+        run: |
+          source /etc/profile
+          export UV_PROJECT_ENVIRONMENT=${HOME}/venv
+          export UV_PYTHON_PREFERENCE=managed
+          export UV_PYTHON_INSTALL_DIR=${HOME}/uv/python
+          export VIRTUAL_ENV=$UV_PROJECT_ENVIRONMENT
+          uv sync --frozen
+          printenv >> $GITHUB_ENV
+
+      - name: Disable powersave
+        run: |
+          source ${UV_PROJECT_ENVIRONMENT}/bin/activate
+          PYTHONPATH=$PYTHONPATH:${{ github.workspace }}/ ${{ github.workspace }}/scripts/manage-powersave.py --disable
+
+      - name: Compile pending models
+        run: |
+          source ${UV_PROJECT_ENVIRONMENT}/bin/activate
+          export PYTHONPATH="${PYTHONPATH}:${{ github.workspace }}/tinygrad_repo:${{ github.workspace }}"
+          MODEL_SIZE=$(python3 -c "from openpilot.common.transformations.model import MEDMODEL_INPUT_SIZE as s; print(f'{s[0]}x{s[1]}')")
+          CAMERA_RES=$(python3 -c "from openpilot.common.transformations.camera import _ar_ox_fisheye as a, _os_fisheye as o; print(f'{a.width}x{a.height} {o.width}x{o.height}')")
+          TG_FLAGS="DEV=QCOM IMAGE=1 FLOAT16=1 NOLOCALS=1 JIT_BATCH_SIZE=0 OPENPILOT_HACKS=1"
+          mkdir -p models_out builds_out
+          BUILD_TIME=$(date -u +%Y-%m-%dT%H:%M:%SZ)
+
+          python3 - <<'EOF' > pending.sh
+          import json
+          for m in json.load(open("resolve_out/pending.json")):
+              print(f"{m['id']}\t{m['name']}\t{m['version']}\t{m['released']}\t{m['onnx_sha256']}\t{m['onnx_url']}")
+          EOF
+
+          while IFS=$'\t' read -r ID NAME VERSION RELEASED ONNX_SHA ONNX_URL; do
+            echo "compiling $ID ($NAME)"
+            curl -fsSL --retry 3 "$ONNX_URL" -o model.onnx
+            echo "$ONNX_SHA  model.onnx" | sha256sum -c -
+
+            env ${TG_FLAGS} python3 openpilot/sunnypilot/modeld_v2/compile_modeld.py \
+              --model-type supercombo \
+              --supercombo-onnx model.onnx \
+              --model-size "$MODEL_SIZE" \
+              --camera-resolutions $CAMERA_RES \
+              --output "models_out/${ID}_driving_tinygrad.pkl"
+
+            python3 -c "
+            import json
+            json.dump({'id': '$ID', 'display_name': 'StarPilot $NAME ($RELEASED)',
+                       'behavior_version': '$VERSION', 'source_onnx_sha256': '$ONNX_SHA'},
+                      open('builds_out/$ID.json', 'w'))
+            "
+          done < pending.sh
+
+          python3 release/ci/spz_catalog.py \
+            --models-dir models_out \
+            --builds-dir builds_out \
+            --hf-repo "$HF_REPO" \
+            --previous resolve_out/spz_models.json \
+            --build-time "$BUILD_TIME" \
+            --output spz_models.json
+
+      - name: Re-enable powersave
+        if: always()
+        run: |
+          source ${UV_PROJECT_ENVIRONMENT}/bin/activate
+          PYTHONPATH=$PYTHONPATH:${{ github.workspace }}/ ${{ github.workspace }}/scripts/manage-powersave.py --enable
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: spz-bundle
+          path: |
+            models_out/
+            spz_models.json
+
+  publish:
+    needs: build
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: spz-bundle
+          path: spz-bundle/
+
+      - name: Upload to HuggingFace
+        env:
+          HF_TOKEN: ${{ secrets.HF_TOKEN }}
+        run: |
+          pipx install hf 2>/dev/null || pip install -q huggingface_hub
+          for pkl in spz-bundle/models_out/*.pkl; do
+            id=$(basename "$pkl" | sed 's/_driving_tinygrad\.pkl//')
+            hf upload "$HF_REPO" "$pkl" "models/spz/$id/$(basename "$pkl")" --repo-type=dataset
+          done
+          hf upload "$HF_REPO" spz-bundle/spz_models.json spz_models.json --repo-type=dataset
