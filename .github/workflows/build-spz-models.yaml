@@ -11,7 +11,7 @@ env:
   STARPILOT_MANIFEST_URL: "https://huggingface.co/buckets/StarPilot-Driving/StarPilot-Resources/resolve/manifests/model_names_v26.json"
   STARPILOT_RESOLVE: "https://huggingface.co/buckets/StarPilot-Driving/StarPilot-Resources/resolve"
   HF_REPO: "zoompilot/zoompilot_models"
-  HF_CATALOG_URL: "https://huggingface.co/datasets/zoompilot/zoompilot_models/resolve/main/spz_models.json"
+  HF_CATALOG_URL: "https://huggingface.co/buckets/zoompilot/zoompilot_models/resolve/spz_models.json"
 
 on:
   workflow_dispatch:
@@ -177,19 +177,27 @@ jobs:
   publish:
     needs: build
     runs-on: ubuntu-24.04
+    permissions:
+      # HF trusted publisher: this job exchanges its GitHub OIDC token for a
+      # bucket-scoped, one-hour HF token; no HF_TOKEN secret exists to leak
+      id-token: write
+    env:
+      HF_OIDC_RESOURCE: buckets/zoompilot/zoompilot_models
     steps:
       - uses: actions/download-artifact@v4
         with:
           name: spz-bundle
           path: spz-bundle/
 
-      - name: Upload to HuggingFace
-        env:
-          HF_TOKEN: ${{ secrets.HF_TOKEN }}
+      - name: Install the hf CLI
         run: |
-          pipx install hf 2>/dev/null || pip install -q huggingface_hub
+          curl -LsSf https://hf.co/cli/install.sh | bash
+          echo "$HOME/.local/bin" >> $GITHUB_PATH
+
+      - name: Upload to the HuggingFace bucket
+        run: |
           for pkl in spz-bundle/models_out/*.pkl; do
             id=$(basename "$pkl" | sed 's/_driving_tinygrad\.pkl//')
-            hf upload "$HF_REPO" "$pkl" "models/spz/$id/$(basename "$pkl")" --repo-type=dataset
+            hf buckets cp "$pkl" "hf://buckets/zoompilot/zoompilot_models/models/spz/$id/$(basename "$pkl")"
           done
-          hf upload "$HF_REPO" spz-bundle/spz_models.json spz_models.json --repo-type=dataset
+          hf buckets cp spz-bundle/spz_models.json hf://buckets/zoompilot/zoompilot_models/spz_models.json

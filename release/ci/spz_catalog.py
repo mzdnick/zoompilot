@@ -47,7 +47,7 @@ def bundle_for(build: dict, pkl_path: pathlib.Path, hf_repo: str, build_time: st
   if "action" not in slices:
     raise ValueError(f"{build['id']} has no action output; refusing to publish a spz model that cannot drive action control")
   features_buffer = metadata["input_shapes"]["features_buffer"]
-  url = f"https://huggingface.co/datasets/{hf_repo}/resolve/main/models/spz/{build['id']}/{pkl_path.name}"
+  url = f"https://huggingface.co/buckets/{hf_repo}/resolve/models/spz/{build['id']}/{pkl_path.name}"
   return {
     "short_name": short_name(build["id"]),
     "display_name": build["display_name"],
