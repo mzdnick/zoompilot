@@ -8,7 +8,8 @@ The small model's curvature at low speed while a large model drives.
 
 A large model's lateral is unstable below about 2 m/s (upstream stops steering
 there for it). The small model, loaded anyway as the large one's fallback,
-steers there instead. It runs beside the large one only below SPEED + FADE,
+steers there instead, below `speed` (the SmallModelSteering param, m/s, 0
+for never). It runs beside the large one only below speed + FADE,
 from a reset history, as at a modeld start: its first frames fall in the fade,
 where they weigh little. It runs in the large model's after_enqueue, while the
 chestnut or the Jetson works. Only desiredCurvature is taken: acceleration,
@@ -18,8 +19,7 @@ import numpy as np
 
 from openpilot.common.swaglog import cloudlog
 
-SPEED = 5.0  # m/s, at and below which the small model steers: clear of where the large one goes unstable
-FADE = 0.5   # m/s above SPEED over which the large model takes the curvature back
+FADE = 0.5  # m/s above the speed over which the large model takes the curvature back
 
 
 class SmallLateral:
@@ -28,10 +28,12 @@ class SmallLateral:
     self.output = None
     self.action_t = (0.0, 0.0)
     self.running = False
+    self.speed = 0.0  # m/s, at and below which the small model steers; 0 never
 
   def runs_beside(self, model, v_ego: float) -> bool:
     """A large model drives slowly enough to want the small one beside it."""
-    return self.small is not None and model is not self.small and bool(model.chestnut) and v_ego < SPEED + FADE
+    return (self.small is not None and model is not self.small and bool(model.chestnut) and
+            self.speed > 0 and v_ego < self.speed + FADE)
 
   def after_enqueue(self, model, then, desire: int, bufs, transforms, inputs: dict[str, np.ndarray], v_ego: float):
     """model.run's after_enqueue for this frame: `then`, then the small model
@@ -81,10 +83,10 @@ class SmallLateral:
             small_inputs)
 
   def curvature(self, action, prev_action, v_ego: float) -> None:
-    """Give the large model's action the small model's curvature below SPEED."""
+    """Give the large model's action the small model's curvature below the speed."""
     if self.output is None:
       return
-    weight = float(np.interp(v_ego, [SPEED, SPEED + FADE], [1.0, 0.0]))
+    weight = float(np.interp(v_ego, [self.speed, self.speed + FADE], [1.0, 0.0]))
     if weight == 0.0:
       return
     small = self.small.get_action_from_model(self.output, prev_action, *self.action_t, v_ego)

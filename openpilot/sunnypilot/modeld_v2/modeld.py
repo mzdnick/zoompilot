@@ -434,6 +434,7 @@ def main(demo=False):
       model.PLANPLUS_CONTROL = params.get("PlanplusControl", return_default=True)
       camera_offset_helper.set_offset(params.get("CameraOffset", return_default=True))
       blendful_enabled = params.get_bool("Blendful")
+      small_lateral.speed = params.get("SmallModelSteering", return_default=True)
     lat_delay = model.lat_delay + model.LAT_SMOOTH_SECONDS
     long_delay = CP.longitudinalActuatorDelay + model.LONG_SMOOTH_SECONDS
     if sm.updated["extrinsicsCalibration"] and sm.seen['narrowRoadCameraState'] and sm.seen['deviceState']:
