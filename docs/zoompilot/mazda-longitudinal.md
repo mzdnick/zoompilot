@@ -597,10 +597,11 @@ command with a gain of 1.07 and about 0.6 s of lag whoever sends it.
   m/s3 pull-away from a stop. Our plan reached the same peaks with p90 rising jerk of 1.2 to 1.7
   m/s3, and the driver reads that as aggressive throttle. `ACCEL_BUILD_V` over `ACCEL_BUILD_BP`
   applies that shape to the positive part of the command: 1.25 m/s3 below 3 m/s (stock's own
-  pull-away ramp) and 0.8 m/s3 from 6 m/s up, a third quicker than stock on purpose. Stock's
-  slowness on a lead pulling away is mostly its dash walk and radar lag, which the plan does
-  not have, and 0.8 is the largest rate that still sits inside stock's rising-jerk
-  distribution (p99 0.65 to 0.93 by bin); every other openpilot port builds at 2 m/s3 or more.
+  pull-away ramp), 0.8 m/s3 from 6 to 12 m/s, a third quicker than stock on purpose, and
+  stock's own 0.6 from 20 m/s up. In town stock's slowness on a lead pulling away is mostly its
+  dash walk and radar lag, which the plan does not have, and 0.8 is the largest rate that still
+  sits inside stock's rising-jerk distribution (p99 0.65 to 0.93 by bin). At highway speed the
+  quicker build only reached a kickdown sooner (2026-10-30 drives), so it is stock's there.
   It governs only the region above zero: brake release below zero keeps the 4.0 m/s3 windup,
   because stock's own brake release has a p99 tail near 2 m/s3 and holding the brake longer
   than the plan asks is the wrong failure.
@@ -616,6 +617,21 @@ command with a gain of 1.07 and about 0.6 s of lag whoever sends it.
   `ACCEL_MAX` (2.0) and our wire reached 2.0 below 5 m/s and 1.06 at 15 to 20 m/s.
   `ACCEL_CEILING_V` over `ACCEL_CEILING_BP` caps the wire at stock's envelope. It is a tuning
   cap inside the panda's +2000 raw safety limit, not a replacement for it.
+- **Gap to the set speed.** Stock's command also depends on how far under the set speed the car
+  is. With no lead at 20 to 24 m/s its p50 / p90 is 0.31 / 0.37 m/s2 for a 0.5 to 1.5 m/s
+  shortfall, 0.41 / 0.44 for 1.5 to 3, 0.51 / 0.55 for 3 to 5 and 0.64 / 0.76 for 5 to 10
+  (1.94M stock frames); 16 to 20 m/s is within a few hundredths. Upstream's cruise candidate is
+  `clip(v_cruise - v_ego, -0.5, 2.0)` since chill mode was removed (#39097), so any shortfall of
+  2 m/s asks for 2.0, and Set Speed Assist lifts experimental mode to the same answer. On the
+  four 2026-10-30 drives the wire sat on the 0.8 speed ceiling closing 1.5 to 3 m/s gaps and the
+  car kicked down 24 times in 13.7 engaged minutes, mostly 6>5>4 at 18 to 21 m/s; 23 of them came
+  from the lift toward chill's answer, none from the model. This car's kickdowns (CAN 0x202 RPM,
+  0x228 GEAR_BOX) sit at about 0.35 m/s2 in sixth and 0.42 in fifth from 14 to 24 m/s.
+  `get_pid_accel_limits` caps the command at the speed ceiling scaled by `ACCEL_GAP_FRACTION`
+  over the gap, which lands between stock's p50 and p90 from 9 to 24 m/s; a launch or a large
+  gap keeps the whole ceiling. It is Ford's and Honda Nidec's pattern (their PCM refuses accel
+  near the set speed) and binds every candidate in both modes: chill, the lift, the lead MPC and
+  the model.
 
 Replaying all three over the logged plans of our 17 alpha-long routes moves the p90 rising jerk
 from 1.0 to 1.7 m/s3 onto the 0.8 line in every bin from 5 m/s up and trims the peaks by 0.05 to
