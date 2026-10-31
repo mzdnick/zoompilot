@@ -794,7 +794,7 @@ the dash lane indicators, so those two stay zeroed.
 | `ACCEL_WINDUP_LIMIT` | 4.0 m/s3 | plan up-slew p99 +3.2, p99.9 +6.3; brake region only | reporter's route |
 | `ACCEL_BUILD_V` | 1.22 to 0.8 m/s3 over 3 to 6 m/s | stock +12 raw per 50 Hz frame (0.59) in 99.3% of rising frames, taken a third quicker; the release ramp pulling away | 158 stock routes |
 | `ACCEL_LIFT_LIMIT` | -2.0 m/s3 | stock throttle lift <= 40 raw per frame in 99.98% of falling positive frames | 158 stock routes |
-| `ACCEL_CEILING_V` | 1.5, 1.75, 1.45, 1.05, 0.85, 0.65 m/s2 at 0, 4, 9, 14, 18, 25 m/s | stock accelerating command p99 by speed, no lead | 158 stock routes |
+| `ACCEL_CEILING_V` | 1.5, 1.75, 1.45, 0.95, 0.85, 0.65 m/s2 at 0, 4, 9, 14, 18, 25 m/s | stock accelerating command p99 by speed, no lead; 14 m/s eased from 1.05 after 4>3 kickdowns near 3000 rpm (2026-10-31) | 158 stock routes |
 | `ACCEL_WINDDOWN_LIMIT` | -10.0 m/s3 | clips only p99.9+ steps | reporter's route |
 | `stopAccel` | -1.0 m/s2 | stock hold raw -1024 | corpus |
 | `longitudinalActuatorDelay` | 0.36 s | 0.3 s dead time + 0.3 s lag | corpus |
