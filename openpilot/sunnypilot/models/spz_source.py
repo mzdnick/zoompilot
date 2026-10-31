@@ -11,12 +11,15 @@ import requests
 from requests.exceptions import (SSLError, RequestException)
 
 from openpilot.common.swaglog import cloudlog
-from openpilot.sunnypilot.models.fetcher import ModelCache
 
 # StarPilot's spz fine-tunes, recompiled by zoompilot CI into modeld_v2 artifacts and
 # published as sunnypilot manifest bundles. The catalog follows the driving_models
 # bundle schema, so entries merge into the qcom catalog and ride the existing
 # selector, downloader, and modeld_v2 without fork-specific device code.
+#
+# Deliberately no params persistence: a params key the running build's registry does
+# not know raises on write, and a device updated over a prebuilt install keeps that
+# build's params_pyx. The fetcher keeps the catalog in memory for its process life.
 SPZ_CATALOG_URL = "https://huggingface.co/datasets/zoompilot/zoompilot_models/resolve/main/spz_models.json"
 
 # every bundle key ModelParser._parse_bundle reads; the catalog generator emits these
@@ -66,27 +69,17 @@ def parse_spz_catalog(json_data: object) -> list[dict]:
   return parsed
 
 
-def fetch_spz_bundles(cache: ModelCache) -> list[dict]:
-  """Fetch the spz catalog, or fall back to its cache when the fetch fails.
-
-  An empty list leaves the sunnypilot catalog untouched, so an unreachable
-  catalog never degrades model selection.
-  """
+def fetch_spz_catalog() -> list[dict]:
+  """Fetch the spz catalog over HTTP and parse it; an empty list means unavailable."""
   try:
     response = requests.get(SPZ_CATALOG_URL, timeout=10)
     response.raise_for_status()
     bundles = parse_spz_catalog(response.json())
-    if bundles:
-      cache.set({"bundles": bundles})
-      return bundles
-    cloudlog.warning("spz catalog fetched but held no valid bundles")
+    if not bundles:
+      cloudlog.warning("spz catalog fetched but held no valid bundles")
+    return bundles
   except (ConnectionError, SSLError, RequestException) as e:
     cloudlog.warning(f"spz catalog fetch failed: {e}")
   except Exception as e:
     cloudlog.exception(f"unexpected error fetching the spz catalog: {e}")
-
-  cached_data, _ = cache.get()
-  if cached_data:
-    cloudlog.warning("using the cached spz catalog")
-    return parse_spz_catalog(cached_data)
   return []

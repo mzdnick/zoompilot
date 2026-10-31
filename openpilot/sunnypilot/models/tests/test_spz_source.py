@@ -9,7 +9,7 @@ import unittest
 from unittest import mock
 
 from openpilot.sunnypilot.models.fetcher import ModelParser
-from openpilot.sunnypilot.models.spz_source import SPZ_CATALOG_URL, fetch_spz_bundles, parse_spz_catalog
+from openpilot.sunnypilot.models.spz_source import SPZ_CATALOG_URL, fetch_spz_catalog, parse_spz_catalog
 
 # the shape the build-spz-models workflow publishes: a sunnypilot manifest bundle whose
 # artifact points at zoompilot's recompiled pkl, plus an spz key with the StarPilot origin
@@ -76,35 +76,20 @@ class TestParseSpzCatalog(unittest.TestCase):
     self.assertEqual(parse_spz_catalog({"bundles": "nope"}), [])
 
 
-class TestFetchSpzBundles(unittest.TestCase):
+class TestFetchSpzCatalog(unittest.TestCase):
 
-  def setUp(self):
-    self.params = mock.MagicMock()
-    self.params.get.return_value = None
-    from openpilot.sunnypilot.models.fetcher import ModelCache
-    self.cache = ModelCache(self.params, suffix="_Spz")
-
-  def test_fetch_success_returns_and_caches(self):
+  def test_fetch_success_parses(self):
     response = mock.MagicMock(status_code=200)
     response.json.return_value = {"bundles": [_bundle()]}
     with mock.patch("openpilot.sunnypilot.models.spz_source.requests.get", return_value=response) as get:
-      parsed = fetch_spz_bundles(self.cache)
+      parsed = fetch_spz_catalog()
     get.assert_called_once_with(SPZ_CATALOG_URL, timeout=10)
     self.assertEqual([b["ref"] for b in parsed], ["spz_polaris_r3a"])
-    self.assertEqual(self.params.put.call_count, 2)  # cache data + sync time
 
-  def test_fetch_failure_falls_back_to_cache(self):
-    cached = {"bundles": [_bundle(ref="spz_cached")]}
-    self.params.get.side_effect = lambda key, **k: cached if "Cache" in str(key) else 1
+  def test_fetch_failure_is_empty_not_fatal(self):
     with mock.patch("openpilot.sunnypilot.models.spz_source.requests.get",
                     side_effect=ConnectionError("down")):
-      parsed = fetch_spz_bundles(self.cache)
-    self.assertEqual([b["ref"] for b in parsed], ["spz_cached"])
-
-  def test_fetch_failure_without_cache_is_empty(self):
-    with mock.patch("openpilot.sunnypilot.models.spz_source.requests.get",
-                    side_effect=ConnectionError("down")):
-      self.assertEqual(fetch_spz_bundles(self.cache), [])
+      self.assertEqual(fetch_spz_catalog(), [])
 
 
 class TestFetcherZPSpz(unittest.TestCase):
@@ -161,22 +146,25 @@ class TestFetcherZPSpz(unittest.TestCase):
     self.assertIn("spz_polaris_r3a", [b.ref for b in bundles])
     self.assertIn("f9d5fc7d", [b.ref for b in bundles])
 
-  def test_failed_fetch_backs_off(self):
-    import time
-    fetcher = self._fetcher({"ModelManager_SpzFetchAttempt": int(time.monotonic())})
-    with mock.patch("openpilot.sunnypilot.models.spz_source.requests.get",
-                    side_effect=ConnectionError("down")) as get:
+  def test_failed_fetch_backs_off_in_memory(self):
+    fetcher = self._fetcher({})
+    with mock.patch("openpilot.sunnypilot.models.fetcher_zp.fetch_spz_catalog", return_value=[]) as fetch:
       self.assertEqual(fetcher.spz_bundles(), [])
-    get.assert_not_called()  # inside the backoff window: no fetch attempt
+      self.assertEqual(fetcher.spz_bundles(), [])  # inside the backoff window
+    self.assertEqual(fetch.call_count, 1)  # one attempt, not one per serve
 
-  def test_backoff_still_serves_cached_spz(self):
-    import time
-    fetcher = self._fetcher({"ModelManager_SpzFetchAttempt": int(time.monotonic()),
-                             "ModelManager_ModelsCache_Spz": {"bundles": [_bundle()]}})
-    with mock.patch("openpilot.sunnypilot.models.spz_source.requests.get") as get:
-      parsed = fetcher.spz_bundles()
-    get.assert_not_called()
-    self.assertEqual([b.ref for b in parsed], ["spz_polaris_r3a"])
+  def test_last_good_list_serves_across_failures(self):
+    fetcher = self._fetcher({})
+    good = mock.MagicMock(return_value=[_bundle()])
+    dead = mock.MagicMock(return_value=[])
+    with mock.patch("openpilot.sunnypilot.models.fetcher_zp.fetch_spz_catalog", good):
+      first = fetcher.spz_bundles()
+    fetcher._spz_fetched_at -= 2 * 3600  # the hourly hold lapses
+    fetcher._spz_attempt_at -= 2 * 3600  # past the backoff window too
+    with mock.patch("openpilot.sunnypilot.models.fetcher_zp.fetch_spz_catalog", dead):
+      second = fetcher.spz_bundles()
+    dead.assert_called_once()
+    self.assertEqual([b.ref for b in first], [b.ref for b in second])
 
 
   def test_spz_failure_never_blanks_the_selector(self):

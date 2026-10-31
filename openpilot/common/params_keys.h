@@ -218,11 +218,8 @@ inline static std::unordered_map<std::string, ParamKeyAttributes> keys = {
     {"ModelManager_Favs", {PERSISTENT | BACKUP, STRING}},
     {"ModelManager_LastSyncTime", {CLEAR_ON_MANAGER_START | CLEAR_ON_OFFROAD_TRANSITION, INT, "0"}},
     {"ModelManager_LastSyncTime_Chestnut", {CLEAR_ON_MANAGER_START | CLEAR_ON_OFFROAD_TRANSITION, INT, "0"}},
-    {"ModelManager_LastSyncTime_Spz", {CLEAR_ON_MANAGER_START | CLEAR_ON_OFFROAD_TRANSITION, INT, "0"}},
     {"ModelManager_ModelsCache", {PERSISTENT | BACKUP, JSON}},
     {"ModelManager_ModelsCache_Chestnut", {PERSISTENT | BACKUP, JSON}},
-    {"ModelManager_ModelsCache_Spz", {PERSISTENT | BACKUP, JSON}},
-    {"ModelManager_SpzFetchAttempt", {CLEAR_ON_MANAGER_START, INT, "0"}},  // monotonic clock: reset before it can outlive a reboot
 
     // Neural Network Lateral Control
     {"NeuralNetworkLateralControl", {PERSISTENT | BACKUP, BOOL, "0"}},
