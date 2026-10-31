@@ -79,6 +79,12 @@ winddown. The fix (2026-09-01, opendbc 95d5ff56c4) set both to 12, param-gated o
 
 ### Driver-torque headroom
 
+The headroom is not the override. Its line is drawn from the 1200 rail, so under the 620 highway
+ceiling a driver needs 54 counts before it cuts anything, against a p99 push of 34. Overrides were
+pure muscle above 13 m/s. `STEER_OVERRIDE_BP` scales the command by the opposing driver torque
+instead (15 counts keeps all of it, 50 none), the same share at every speed, before the headroom
+limit runs.
+
 The command may not exceed `STEER_MAX + (STEER_DRIVER_ALLOWANCE + driver_torque) *
 STEER_DRIVER_MULTIPLIER`, with `STEER_DRIVER_MULTIPLIER` = 15 on this EPS (upstream's value is 1).
 The panda enforces the same envelope, but from the min/max of its own last 6 samples
@@ -655,6 +661,7 @@ logs cannot record it, and the four mapped alerts were all under cruise.
 | `max_rt_delta` (panda) | 320 | 32 x max_rate_up, upstream's ratio | derived |
 | `STEER_DRIVER_MULTIPLIER` | 15 | tuned for the 2022 EPS (upstream 1) | on-car tuning |
 | `STEER_DRIVER_ALLOWANCE` | 15 | upstream | upstream |
+| `STEER_OVERRIDE_BP` / `_V` | 15 to 50 counts against the command keeps 100% to 0% of it | the headroom above is on the 1200 rail and cut 0% of pressed frames above 13 m/s (620 ceiling) vs 6% below 5; this cuts 11-15% at every speed, 0.01% of unpressed frames | 408 segments, 2026-10-30 |
 | `STEER_DRIVER_SAMPLES` | 10 | must span the panda's 6-sample window plus one control cycle | 00000148 replay |
 | `STEER_DRIVER_MARGIN` | 2 counts | 0 frames over the panda ceiling at 30 or 50 ms staleness, 36,195 frames | 00000139, 00000148 |
 | `EPS_CEILING_LOOKUP` | 1148 at 8.0 m/s to 620 at 14.5 m/s | 11,408,748 frames, 4798 segments; 0 of 7,490,617 above 620 over 32.5 mph | corpus |
