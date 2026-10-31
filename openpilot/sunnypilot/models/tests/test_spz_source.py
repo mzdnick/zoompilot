@@ -43,7 +43,7 @@ class TestParseSpzCatalog(unittest.TestCase):
                          "ref": "f9d5fc7d", "environment": "development", "runner": "tinygrad", "index": 0,
                          "minimum_selector_version": "21", "generation": "4",
                          "models": SPZ_BUNDLE["models"]}
-    merged = {"bundles": [sunnypilot_bundle, *_bundle()]}
+    merged = {"bundles": [sunnypilot_bundle, _bundle()]}
     parsed = ModelParser.parse_models(merged)
     by_ref = {b.ref: b for b in parsed}
     self.assertIn("spz_polaris_r3a", by_ref)
@@ -105,6 +105,78 @@ class TestFetchSpzBundles(unittest.TestCase):
     with mock.patch("openpilot.sunnypilot.models.spz_source.requests.get",
                     side_effect=ConnectionError("down")):
       self.assertEqual(fetch_spz_bundles(self.cache), [])
+
+
+class TestFetcherZPSpz(unittest.TestCase):
+  """spz entries serve through get_bundles_for_source, whatever the sunnypilot catalog cache holds."""
+
+  def _fetcher(self, params_values: dict):
+    params = mock.MagicMock()
+    params.get.side_effect = lambda key, *a, **k: params_values.get(key)
+    from openpilot.sunnypilot.models.fetcher_zp import ModelFetcherZP
+    return ModelFetcherZP(params)
+
+  def _spz_response(self):
+    response = mock.MagicMock(status_code=200)
+    response.json.return_value = {"bundles": [_bundle()]}
+    return response
+
+  SUNNYPILOT_BUNDLE = {"short_name": "LAV2", "display_name": "LAv2", "is_20hz": False, "is_big": False,
+                       "ref": "f9d5fc7d", "environment": "development", "runner": "tinygrad", "index": 0,
+                       "minimum_selector_version": "21", "generation": "4", "models": SPZ_BUNDLE["models"]}
+
+  def _routed_response(self, sunnypilot_json):
+    # fetcher and spz_source import the same requests module, so one patch must
+    # route both catalogs by URL
+    def route(url, *a, **k):
+      response = mock.MagicMock(status_code=200)
+      response.json.return_value = ({"bundles": [_bundle()]} if "zoompilot_models" in url else sunnypilot_json)
+      return response
+    return mock.patch("openpilot.sunnypilot.models.spz_source.requests.get", side_effect=route)
+
+  def test_serve_time_merge_appends_spz_once(self):
+    sunnypilot_json = {"bundles": [self.SUNNYPILOT_BUNDLE, _bundle()]}  # ref clash stays deduped
+    fetcher = self._fetcher({})
+    with self._routed_response(sunnypilot_json):
+      bundles = fetcher.get_bundles_for_source("qcom")
+    refs = [b.ref for b in bundles]
+    self.assertEqual(refs.count("spz_polaris_r3a"), 1)  # appended once, not also baked in by the fetch
+    self.assertIn("f9d5fc7d", refs)
+
+  def test_serve_time_merge_survives_warm_sunnypilot_cache(self):
+    # the user-facing case: the sunnypilot catalog is served from a warm cache and never
+    # refetched, and the spz entries still appear on the same tick
+    import time
+    params_values = {
+      "ModelManager_ModelsCache": {"bundles": [self.SUNNYPILOT_BUNDLE]},
+      "ModelManager_LastSyncTime": int(time.monotonic() * 1e9),  # fresh qcom cache (ns): no refetch
+      "ModelManager_SpzFetchAttempt": 0,  # outside the backoff window: spz fetch runs now
+    }
+    fetcher = self._fetcher(params_values)
+    with self._routed_response({"bundles": []}) as route:
+      bundles = fetcher.get_bundles_for_source("qcom")
+      route.call_count  # qcom served from cache: the router only sees the spz fetch
+      spz_urls = [c.args[0] for c in route.call_args_list]
+      self.assertTrue(all("zoompilot_models" in u for u in spz_urls), spz_urls)
+    self.assertIn("spz_polaris_r3a", [b.ref for b in bundles])
+    self.assertIn("f9d5fc7d", [b.ref for b in bundles])
+
+  def test_failed_fetch_backs_off(self):
+    import time
+    fetcher = self._fetcher({"ModelManager_SpzFetchAttempt": int(time.monotonic())})
+    with mock.patch("openpilot.sunnypilot.models.spz_source.requests.get",
+                    side_effect=ConnectionError("down")) as get:
+      self.assertEqual(fetcher.spz_bundles(), [])
+    get.assert_not_called()  # inside the backoff window: no fetch attempt
+
+  def test_backoff_still_serves_cached_spz(self):
+    import time
+    fetcher = self._fetcher({"ModelManager_SpzFetchAttempt": int(time.monotonic()),
+                             "ModelManager_ModelsCache_Spz": {"bundles": [_bundle()]}})
+    with mock.patch("openpilot.sunnypilot.models.spz_source.requests.get") as get:
+      parsed = fetcher.spz_bundles()
+    get.assert_not_called()
+    self.assertEqual([b.ref for b in parsed], ["spz_polaris_r3a"])
 
 
 if __name__ == "__main__":

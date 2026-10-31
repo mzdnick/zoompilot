@@ -6,14 +6,21 @@ See the LICENSE.md file in the root directory for more details.
 """
 from __future__ import annotations
 
+import time
+
+from openpilot.cereal import custom
 from openpilot.common.params import Params
 from openpilot.common.swaglog import cloudlog
 from openpilot.sunnypilot import jetlink_adapter
-from openpilot.sunnypilot.models.fetcher import ModelCache, ModelFetcher
+from openpilot.sunnypilot.models.fetcher import ModelCache, ModelFetcher, ModelParser
 from openpilot.sunnypilot.models.spz_source import fetch_spz_bundles
 
 # stamped on the big-model catalog: whether it carries the newer catalogs' models
 EXTENDED_KEY = "extended"
+
+# a failed spz catalog fetch waits this long before retrying; the spz cache itself
+# keeps a successful fetch for an hour like the sunnypilot catalog
+SPZ_RETRY_SECONDS = 300
 
 
 class BigCatalogCache(ModelCache):
@@ -52,17 +59,42 @@ class ModelFetcherZP(ModelFetcher):
     if isinstance(cached, dict) and cached.get(EXTENDED_KEY) is True:
       self._update_active_json(extended=True)
 
+  def get_bundles_for_source(self, source: str) -> list[custom.ModelManagerSP.ModelBundle]:
+    bundles = super().get_bundles_for_source(source)
+    if source != "qcom":
+      return bundles
+    # spz entries join at serve time, not catalog-refetch time: a device updating to
+    # this build shows them within one manager tick, whatever state the sunnypilot
+    # catalog cache is in
+    spz = self.spz_bundles()
+    if spz:
+      known_refs = {bundle.ref for bundle in bundles}
+      merged = [bundle for bundle in spz if bundle.ref not in known_refs]
+      if merged:
+        cloudlog.debug(f"spz catalog served {len(merged)} bundles")
+      return bundles + merged
+    return bundles
+
+  def spz_bundles(self) -> list[custom.ModelManagerSP.ModelBundle]:
+    """The spz catalog under its own one-hour cache; failed fetches back off, so an
+    offline device neither retries every manager tick nor hides its cached models."""
+    cached_data, is_expired = self.spz_cache.get()
+    if cached_data and not is_expired:
+      return ModelParser.parse_models(cached_data)
+
+    now = int(time.monotonic())
+    try:
+      last_attempt = int(self.params.get("ModelManager_SpzFetchAttempt") or 0)
+    except (TypeError, ValueError):
+      last_attempt = 0
+    if now - last_attempt < SPZ_RETRY_SECONDS:
+      return ModelParser.parse_models(cached_data) if cached_data else []
+
+    self.params.put("ModelManager_SpzFetchAttempt", now, block=True)
+    bundles = fetch_spz_bundles(self.spz_cache)
+    return ModelParser.parse_models({"bundles": bundles}) if bundles else []
+
   def _extend_catalog(self, source: str, json_data: dict) -> dict:
-    if source == "qcom":
-      # the merged catalog is cached under the qcom key, so the spz entries ride the
-      # same hourly refetch/offline-cache cycle as the sunnypilot bundles
-      spz_bundles = fetch_spz_bundles(self.spz_cache)
-      if spz_bundles:
-        known_refs = {bundle.get("ref") for bundle in json_data.get("bundles", [])}
-        json_data = {**json_data, "bundles": [*json_data.get("bundles", []),
-                                             *[b for b in spz_bundles if b.get("ref") not in known_refs]]}
-        cloudlog.debug(f"merged {len(spz_bundles)} spz bundles into the qcom catalog")
-      return json_data
     if source != "chestnut":
       return json_data
     extended = jetlink_adapter.should_extend_catalog()
