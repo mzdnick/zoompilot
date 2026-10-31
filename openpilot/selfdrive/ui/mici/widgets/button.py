@@ -22,6 +22,10 @@ LABEL_COLOR          = rl.Color(255, 255, 255, int(255 * 0.9))
 COMPLICATION_GREY    = rl.Color(0xAA, 0xAA, 0xAA, 255)
 PRESSED_SCALE = 1.15 if DO_ZOOM else 1.07
 
+# cards with two title lines plus a subtext read bottom-heavy; the whole text
+# block rides up by this many px
+THREE_LINE_RISE = 4
+
 
 class ScrollState(Enum):
   PRE_SCROLL = 0
@@ -200,10 +204,7 @@ class BigButton(BaseButton):
 
   def _update_label_layout(self):
     self._label.set_font_size(self._get_label_font_size())
-    if self.value:
-      self._label.set_alignment_vertical(TextAlignmentVertical.TOP)
-    else:
-      self._label.set_alignment_vertical(TextAlignmentVertical.BOTTOM)
+    self._label.set_alignment_vertical(TextAlignmentVertical.TOP)
 
   def set_text(self, text: str):
     self.text = text
@@ -248,16 +249,24 @@ class BigButton(BaseButton):
     # LABEL ------------------------------------------------------------------
     label_x = self._rect.x + self.LABEL_HORIZONTAL_PADDING
 
+    # only a two-line title with a subtext fills the card enough to ride higher
+    title_h = self._label.get_content_height(int(self._title_width_hint()))
+    rise = THREE_LINE_RISE if (self.value and title_h > 66) else 0
+
     label_color = LABEL_COLOR if self.enabled else rl.Color(255, 255, 255, int(255 * 0.35))
     self._label.set_color(label_color)
-    label_rect = rl.Rectangle(label_x, btn_y + self.LABEL_VERTICAL_PADDING, self._title_width_hint(),
+    label_rect = rl.Rectangle(label_x, btn_y + self.LABEL_VERTICAL_PADDING - rise, self._title_width_hint(),
                               self._rect.height - self.LABEL_VERTICAL_PADDING * 2)
     self._label.render(label_rect)
 
     if self.value:
-      label_y = label_rect.y + self._label.get_content_height(int(label_rect.width))
-      sub_label_height = btn_y + self._rect.height - self.LABEL_VERTICAL_PADDING - label_y
-      sub_label_rect = rl.Rectangle(label_x, label_y, self._subtitle_width_hint(), sub_label_height)
+      label_y = label_rect.y + title_h
+      # subtext top halfway between hugging the title block and the old bottom pin;
+      # never above the title block
+      sub_h = self._sub_label.get_content_height(int(self._subtitle_width_hint()))
+      pin_top = btn_y + self._rect.height - self.LABEL_VERTICAL_PADDING - sub_h - rise
+      sub_top = max((label_y + pin_top) / 2, label_y)
+      sub_label_rect = rl.Rectangle(label_x, sub_top, self._subtitle_width_hint(), sub_h)
       self._draw_subtitle(sub_label_rect)
 
     # ICON -------------------------------------------------------------------

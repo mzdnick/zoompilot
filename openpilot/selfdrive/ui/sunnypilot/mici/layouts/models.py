@@ -102,8 +102,8 @@ class ModelsLayoutMici(NavScroller):
     self._was_downloading = False
     self._selection_source: str | None = None
 
-    self.select_model_btn = BigButton(tr("select model"), description=tr("Choose the driving model. Small models run on the comma.\n" +
-                                                                         "Big models run on a Chestnut or over Jetlink."))
+    self.select_model_btn = BigButton(tr("select\nmodel"), description=tr("Choose the driving model. Small models run on the comma.\n" +
+                                                                          "Big models run on a Chestnut or over Jetlink."))
     self.select_model_btn.set_click_callback(self._show_folders)
 
     self.refresh_btn = BigButton(tr("refresh models"), description=tr("Fetches the latest list of driving models."))

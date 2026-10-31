@@ -1213,7 +1213,7 @@ class TestModelsPanelMici:
     from openpilot.selfdrive.ui.sunnypilot.mici.layouts.models import ModelsLayoutMici
     layout = ModelsLayoutMici()
     items = [item for item in layout.main_items[1:] if item is not layout.cancel_download_btn]
-    assert [item.text for item in items] == ["select model", "lane center assist",
+    assert [item.text for item in items] == ["select\nmodel", "lane center assist",
                                              "lane turn desires", "lane turn speed", "live steer delay", "manual steer delay",
                                              "camera offset", "jetlink", "small model steer", "refresh models", "clear cache"]
     assert {item._get_label_font_size() for item in items} == {BigButton("t")._get_label_font_size()}, "a long title shrinks its font"
