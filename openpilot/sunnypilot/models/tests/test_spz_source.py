@@ -150,8 +150,24 @@ class TestFetcherZPSpz(unittest.TestCase):
     fetcher = self._fetcher({})
     with mock.patch("openpilot.sunnypilot.models.fetcher_zp.fetch_spz_catalog", return_value=[]) as fetch:
       self.assertEqual(fetcher.spz_bundles(), [])
-      self.assertEqual(fetcher.spz_bundles(), [])  # inside the backoff window
-    self.assertEqual(fetch.call_count, 1)  # one attempt, not one per serve
+      self.assertEqual(fetcher.spz_bundles(), [])  # inside the empty-state backoff window
+    self.assertEqual(fetch.call_count, 1)
+    # empty state: the retry window is short, so a boot-time network failure recovers fast
+    import openpilot.sunnypilot.models.fetcher_zp as zp
+    fetcher._spz_attempt_at -= zp.SPZ_EMPTY_RETRY_SECONDS + 1
+    with mock.patch("openpilot.sunnypilot.models.fetcher_zp.fetch_spz_catalog", return_value=[_bundle()]):
+      self.assertEqual([b.ref for b in fetcher.spz_bundles()], ["spz_polaris_r3a"])
+
+  def test_with_list_backoff_is_long(self):
+    fetcher = self._fetcher({})
+    with mock.patch("openpilot.sunnypilot.models.fetcher_zp.fetch_spz_catalog", return_value=[_bundle()]):
+      fetcher.spz_bundles()
+    import openpilot.sunnypilot.models.fetcher_zp as zp
+    fetcher._spz_fetched_at -= 2 * 3600  # the hourly hold lapses
+    fetcher._spz_attempt_at -= 30  # past the SHORT window but not the long one
+    with mock.patch("openpilot.sunnypilot.models.fetcher_zp.fetch_spz_catalog") as fetch:
+      fetcher.spz_bundles()
+    fetch.assert_not_called()  # a held list backs off five minutes, not twenty seconds
 
   def test_last_good_list_serves_across_failures(self):
     fetcher = self._fetcher({})

@@ -19,9 +19,12 @@ from openpilot.sunnypilot.models.spz_source import fetch_spz_catalog
 EXTENDED_KEY = "extended"
 
 # the spz catalog lives in memory for the manager's process: refreshed hourly, and a
-# failed fetch retries at most every five minutes while the last good list keeps serving
+# failed fetch retries at most every five minutes while the last good list keeps serving.
+# With nothing in hand yet — the manager starts before the network is up at boot — retry
+# every twenty seconds instead, so the models appear within a minute of connectivity.
 SPZ_CACHE_SECONDS = 3600
 SPZ_RETRY_SECONDS = 300
+SPZ_EMPTY_RETRY_SECONDS = 20
 
 
 class BigCatalogCache(ModelCache):
@@ -91,13 +94,17 @@ class ModelFetcherZP(ModelFetcher):
     now = time.monotonic()
     if self._spz_bundles and now - self._spz_fetched_at < SPZ_CACHE_SECONDS:
       return self._spz_bundles
-    if now - self._spz_attempt_at < SPZ_RETRY_SECONDS:
+    retry = SPZ_RETRY_SECONDS if self._spz_bundles else SPZ_EMPTY_RETRY_SECONDS
+    if now - self._spz_attempt_at < retry:
       return self._spz_bundles  # between attempts: the last good list, possibly none
     self._spz_attempt_at = now
     dicts = fetch_spz_catalog()
     if dicts:
-      self._spz_bundles = ModelParser.parse_models({"bundles": dicts})
-      self._spz_fetched_at = time.monotonic()
+      parsed = ModelParser.parse_models({"bundles": dicts})
+      if parsed:
+        self._spz_bundles = parsed
+        self._spz_fetched_at = time.monotonic()
+        cloudlog.info(f"spz catalog serving {len(parsed)} models")
     return self._spz_bundles
 
   def _extend_catalog(self, source: str, json_data: dict) -> dict:
