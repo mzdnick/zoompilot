@@ -220,6 +220,10 @@ Ownership is established by the silence guard and then held on the controller's 
 witnesses (PEDALS 200 ms, ENGINE_DATA 100 ms, the CANParser's own ten-period validity) decide
 whether radar silence is evidence at all, a dead or blipping bus is never adopted as a silenced
 radar, and a blip while owned neither revokes availability nor re-runs the guard on recovery.
+A radar that positively acknowledged this episode's programming request has left its application
+for the bootloader, so its guard is `STOCK_RADAR_ACK_GUARD_T`; any stock CRZ_INFO after the
+acknowledgement voids it and the full guard applies. The first programming request goes out on
+entering the takeover, retries at the UDS cadence after it.
 
 ### Tried and rejected: gating availability alone
 
@@ -767,10 +771,11 @@ the dash lane indicators, so those two stay zeroed.
 | `LONG_STEP` | 2 frames (50 Hz) | stock CRZ_INFO / CRZ_CTRL rate | corpus |
 | `RADAR_STEP` | 10 frames (10 Hz) | stock radar static and track rate | corpus |
 | `RADAR_UDS_STEP` | 50 frames (2 Hz) | tester present cadence, well inside S3 = 5 s | 000000fe |
-| `FSC_SETTLE_T` | 7.0 s | radar-presence check faulted at 1.9 s, passed from 5.8 s (10 s until 2026-10-05) | setup/teardown drives |
+| `FSC_SETTLE_T` | 1.0 s | two CAM_LANEINFO frames past the boot marker; no camera radar check exists (10 s, then 7 s, until 2026-10-30) | FSC firmware, route 1a |
 | `CAM_LANEINFO_FRESH_T` | 1.5 s | 2.7x the longest CAM_LANEINFO period, 0.563 s over 26+ segments, two cars | corpus |
 | `STOCK_RADAR_ALIVE_T` | 0.05 s | stock gap p99.99 31.0 ms | 7.25M frames, 166 routes |
 | `STOCK_RADAR_GUARD_T` | 1.27 s | about 12x the longest stock gap (105.7 ms); the value every engaged drive ran on | 0000002d seg 28 |
+| `STOCK_RADAR_ACK_GUARD_T` | 0.25 s | the guard after the radar's `06 50 02` to our request (7 ms after it, 0x21B stops with it); 2.4x the longest stock gap | 0000001a, 00000025 |
 | `RADAR_SESSION_LIMIT_FRAMES` | 10.0 s | per-episode UDS budget | design |
 | `MAZDA_ENGAGE_BTN_WINDOW` | 10 CRZ_BTNS frames | press 30 to 70 ms before ACC_ACTIVE, 104 engagements | corpus |
 | `MAIN_OFF_DEBOUNCE_SAMPLES` | 10 PEDALS samples (0.1 s) | no self-recovering both-low run in 4026 segments; main-off lands 0.1 s late | corpus |
