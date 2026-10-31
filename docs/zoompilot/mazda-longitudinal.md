@@ -47,14 +47,18 @@ sessions 0x01 and 0x02. Flashing services stay blocked.
 
 ### FSC settle gate
 
-Silencing the radar too early after a cold boot latches an i-ACTIVSENSE fault that only a
-roughly 15 min power-down clears. The camera (FSC) runs a radar-presence check in the seconds
-after its boot settles. On the setup/teardown drives the check faulted when the radar went quiet
-1.9 s after the camera's boot-settle broadcast and passed from 5.8 s; waiting about 8 s was
-proven clean. `FSC_SETTLE_T` was 10 s until 2026-10-05 and is now 7 s, which takes about 3 s off
-alpha long's readiness after ignition (the radar takeover is the last thing it waits on); on-car
-pending. The check's verdict is invisible until first motion, so
-the gate is a timer on the camera's settle signal, not any fault bit.
+The radar takeover waits for the camera (FSC) to finish booting, then `FSC_SETTLE_T` (1 s, two
+CAM_LANEINFO frames) of settled frames. It is the last thing alpha long's readiness waits on.
+
+The gate used to be 10 s, then 7 s, for a supposed camera radar-presence check: one setup drive
+(route 1a) latched an i-ACTIVSENSE fault after the radar went quiet 1.9 s past the camera's
+settle. The camera firmware (GSH7-67XK2-K) has no such check. It receives only 0x21B and the
+tracks 0x361-0x366 from the radar, sends no diagnostics to it, and their ~5 s timeouts reach
+only the AEB monitors, never the LKA fail-safe latch, which is rebuilt in RAM every boot. Route
+1a's fault was the EPS: 0x241 LKAS_FAULT rose 0.3 s after openpilot's first crawl-speed steer
+request, and the camera latched 5.55 s later on its "EPS fault held 5 s" rule (the first-activation
+crawl fault). The ~15 min persistence is the EPS's. The 1 s gate is on-car pending: validate on
+cold boots (15 min or more powered down) logging 0x241 bit 53 and 0x243 ERR_BIT_1/2.
 
 The settle signal is CAM_LANEINFO.NO_ERR_BIT, a pure boot marker that clears at 2.8 to 6.0 s
 after boot and is never set again while driving. A latched fault (ERR_BIT) also shows the boot
