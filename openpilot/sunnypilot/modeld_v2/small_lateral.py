@@ -18,7 +18,7 @@ import numpy as np
 
 from openpilot.common.swaglog import cloudlog
 
-SPEED = 2.0  # m/s, at and below which the small model steers
+SPEED = 5.0  # m/s, at and below which the small model steers: clear of where the large one goes unstable
 FADE = 0.5   # m/s above SPEED over which the large model takes the curvature back
 
 
