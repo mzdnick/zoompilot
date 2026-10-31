@@ -179,5 +179,18 @@ class TestFetcherZPSpz(unittest.TestCase):
     self.assertEqual([b.ref for b in parsed], ["spz_polaris_r3a"])
 
 
+  def test_spz_failure_never_blanks_the_selector(self):
+    # the incident this file owes its shape to: an unregistered params key raised inside
+    # the spz path and the selector fell back to an empty catalog. A spz exception must
+    # leave the sunnypilot catalog untouched.
+    fetcher = self._fetcher({})
+    with mock.patch.object(type(fetcher), "spz_bundles", side_effect=RuntimeError("params registry")), \
+         mock.patch("openpilot.sunnypilot.models.spz_source.requests.get") as get:
+      get.return_value.status_code = 200
+      get.return_value.json.return_value = {"bundles": [self.SUNNYPILOT_BUNDLE]}
+      bundles = fetcher.get_bundles_for_source("qcom")
+    self.assertEqual([b.ref for b in bundles], ["f9d5fc7d"])
+
+
 if __name__ == "__main__":
   unittest.main()

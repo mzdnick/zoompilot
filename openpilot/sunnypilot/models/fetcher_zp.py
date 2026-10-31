@@ -65,8 +65,12 @@ class ModelFetcherZP(ModelFetcher):
       return bundles
     # spz entries join at serve time, not catalog-refetch time: a device updating to
     # this build shows them within one manager tick, whatever state the sunnypilot
-    # catalog cache is in
-    spz = self.spz_bundles()
+    # catalog cache is in. Fail open: a spz problem must never take the selector down.
+    try:
+      spz = self.spz_bundles()
+    except Exception:
+      cloudlog.exception("spz catalog serve failed; serving the sunnypilot catalog alone")
+      return bundles
     if spz:
       known_refs = {bundle.ref for bundle in bundles}
       merged = [bundle for bundle in spz if bundle.ref not in known_refs]
