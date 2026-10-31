@@ -59,6 +59,7 @@ class ModelFetcherZP(ModelFetcher):
     super().__init__(params)
     self.model_caches["chestnut"] = BigCatalogCache(params, self.MODEL_SOURCES["chestnut"][1], fetcher=self)
     self._spz_bundles: list[custom.ModelManagerSP.ModelBundle] = []
+    self._spz_catalog_dicts: list[dict] = []  # last good raw catalog, for the cache bake
     self._spz_fetched_at = 0.0
     self._spz_attempt_at = 0.0
     cached = params.get(f"ModelManager_ModelsCache{self.MODEL_SOURCES['chestnut'][1]}")
@@ -103,11 +104,27 @@ class ModelFetcherZP(ModelFetcher):
       parsed = ModelParser.parse_models({"bundles": dicts})
       if parsed:
         self._spz_bundles = parsed
+        self._spz_catalog_dicts = dicts
         self._spz_fetched_at = time.monotonic()
         cloudlog.info(f"spz catalog serving {len(parsed)} models")
     return self._spz_bundles
 
   def _extend_catalog(self, source: str, json_data: dict) -> dict:
+    if source == "qcom":
+      # bake the last good spz entries into the qcom catalog cache — an existing,
+      # registered param on every build — so offline restarts serve them and the
+      # selection validator finds a selected spz model in the catalog (an absent ref
+      # reads as "model removed" and resets the pick to default)
+      try:
+        self.spz_bundles()
+      except Exception:
+        cloudlog.exception("spz catalog serve failed during the catalog refetch; caching without spz")
+      if self._spz_catalog_dicts:
+        known_refs = {bundle.get("ref") for bundle in json_data.get("bundles", [])}
+        new = [bundle for bundle in self._spz_catalog_dicts if bundle.get("ref") not in known_refs]
+        if new:
+          json_data = {**json_data, "bundles": [*json_data.get("bundles", []), *new]}
+      return json_data
     if source != "chestnut":
       return json_data
     extended = jetlink_adapter.should_extend_catalog()

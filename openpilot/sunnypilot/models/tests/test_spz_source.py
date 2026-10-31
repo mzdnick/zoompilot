@@ -196,5 +196,34 @@ class TestFetcherZPSpz(unittest.TestCase):
     self.assertEqual([b.ref for b in bundles], ["f9d5fc7d"])
 
 
+  def test_refetch_bakes_spz_into_the_cached_catalog(self):
+    # offline restarts and the selection validator both read the cached qcom catalog;
+    # without the bake, a selected spz model resets to default the moment the catalog
+    # is served from cache
+    fetcher = self._fetcher({})
+    with self._routed_response({"bundles": [self.SUNNYPILOT_BUNDLE]}):
+      fetcher.get_bundles_for_source("qcom")
+    cached = next((args[1] for args, kwargs in fetcher.params.put.call_args_list
+                   if args and args[0] == "ModelManager_ModelsCache"), None)
+    self.assertIsNotNone(cached)
+    self.assertIn("spz_polaris_r3a", {b.get("ref") for b in cached["bundles"]})
+
+  def test_offline_restart_serves_baked_spz_from_cache(self):
+    # the user story from the drive test: device offline, spz model already downloaded
+    # and selected — it must stay listed and selected
+    import time
+    cached = {"bundles": [self.SUNNYPILOT_BUNDLE, _bundle()]}  # what the bake wrote
+    params_values = {
+      "ModelManager_ModelsCache": cached,
+      "ModelManager_LastSyncTime": 1,  # long expired: the offline fallback path
+    }
+    fetcher = self._fetcher(params_values)
+    with mock.patch("openpilot.sunnypilot.models.fetcher.requests.get",
+                    side_effect=ConnectionError("offline")):
+      bundles = fetcher.get_bundles_for_source("qcom")
+    self.assertIn("spz_polaris_r3a", [b.ref for b in bundles])
+    self.assertIn("f9d5fc7d", [b.ref for b in bundles])
+
+
 if __name__ == "__main__":
   unittest.main()
